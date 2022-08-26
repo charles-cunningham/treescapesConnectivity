@@ -23,24 +23,27 @@ library(inlabru)
 library(terra)
 library(GADMTools)
 library(tidyverse)
-
+devtools::install_github('BiologicalRecordsCentre/sparta')
+library(sparta)
 # LOAD DATA ------------------------------------------
 
 # Download BNG WKT string
 download.file(url = "https://epsg.io/27700.prettywkt?download",
-              destfile = "Data/Spatial_data/bng.prj")
+              destfile = "../Data/Spatial_data/bng.prj")
 
-bng <- "Data/Spatial_data/bng.prj"
+bng <- "../Data/Spatial_data/bng.prj"
 
 # Read in country outline from GADM
 UK <- gadm_sf_loadCountries( fileNames = "GBR", level = 1,
-                             basefile = "./Data/Spatial_data/")$sf
+                             basefile = "../Data/Spatial_data/")$sf
 
 # Set CRS
 UK <- st_transform(UK, st_crs(bng))
 
 # Load in Carabid test data
-load("Data/Species_data/Carabids_170316_Cleaned_Data.rdata")
+load("../Data/Species_data/Carabids_170316_Cleaned_Data.rdata")
+
+climateDir <- "../Data/Spatial_data/CHESS/Current_climate_variables"
 
 # LOAD FUNCTIONS ------------------------------------
 
@@ -53,7 +56,7 @@ source("Functions/gridCoords().R")
 mySpecies <- "COL_6133"
 
 # Estimated range of spatial effect in km (determines mesh)
-estimated_range <- 80 ### Set v coarse for testing, best value will probably be ~50
+estimated_range <- 50 ### Set v coarse for testing, best value will probably be ~50
 
 ### CODE --------------------------------------------
 
@@ -65,7 +68,7 @@ estimated_range <- 80 ### Set v coarse for testing, best value will probably be 
 # GB <- test[test$NAME_1 != "Northern Ireland", "NAME_1"]
 
 # Only Wales for testing
-GB <- test[test$NAME_1 == "Wales", "NAME_1"]
+GB <- UK[UK$NAME_1 == "Wales", "NAME_1"]
 
 # Write layer to shapefile
 st_write(GB, "Data/Spatial_data/GB.shp", append = FALSE)
@@ -82,7 +85,7 @@ GB$area_sqkm <- expanse(GB, unit="km")
 # Remove polygons with < 20km ^2 area
 GB <- GB[GB$area_sqkm > 10]
 
-# Aggreagte back
+# Aggregate back
 GB <- aggregate(GB) #aggregate back
 
 # # Create base grid (units are metres)
@@ -96,26 +99,67 @@ GB <- aggregate(GB) #aggregate back
 # 
 # plot(GBr)
 
+# CONVERT GRIDREF TO METERS -------------------------
+
+# Create x and y columns
+taxa_data$X <- NA
+taxa_data$Y <- NA
+
+# Populate x and y columns using gridCoords function
+# N.B. Function find the bottom, left-hand corner of the 1km grid square, 
+# so need to add 500m
+
+system.time(
+for (i in unique(taxa_data$TO_GRIDREF)) { # Loop through each row
+   i = unique(taxa_data$TO_GRIDREF)[1]
+  # Run gridCoords()
+  coordData <- gridCoords(i, units = "m")
+  
+  # Add in x and y
+  taxa_data[taxa_data$TO_GRIDREF == i, "X"] <- coordData$x + 500
+  taxa_data[taxa_data$TO_GRIDREF == i, "Y"] <- coordData$y + 500
+  
+}
+)
+
+system.time(
+  
+  sparta::gr2gps_latlon(taxa_data$TO_GRIDREF[1], precision = 1000, projection = "OSGB", centre = TRUE)
+  
+)
+
+
 ### PROCESS TO VISITS DATAFRAME -----------------------
 
 # Add visit column (gridref plus date)
-taxa_data$visit <- paste(taxa_data$TO_GRIDREF, taxa_data$TO_STARTDATE, sep="_")
+taxa_data$VISIT <- paste(taxa_data$TO_GRIDREF, taxa_data$TO_STARTDATE, sep="_")
 
-# Transform into visit data.frame
+# Add count of number of species recorded at each visit
+# (Number of species reported on a visit, as an indicator of effort -
+# most records are of list length 1 and probably not a comprehensive survey)
+taxa_data <- taxa_data %>% 
+  add_count(VISIT, name = "NUM_SP")
+
+# Transform into visits data.frame
 visitData <- taxa_data %>%
-  add_column(Presence = 1) %>% # Add a presence column
+  add_column(PRESENCE = 1) %>% # Add a presence column
   pivot_wider(names_from = CONCEPT,
-              values_from = Presence) %>% # Transform to wide data frame (species names now columns)
+              values_from = PRESENCE) %>% # Transform to wide data frame (species names now columns)
   janitor::clean_names(case = "all_caps") %>% # All characters in data.frame to CAPS
-  rename(Presence = toupper(mySpecies)) %>% # Change the species of interest column name to 'Presence'
+  rename(PRESENCE = toupper(mySpecies)) %>% # Change the species of interest column name to 'Presence'
   dplyr::select(TO_GRIDREF,TO_STARTDATE,
-                YEAR, VISIT, Presence) # Convert back to long data.frame
+                YEAR, VISIT, PRESENCE, 
+                X, Y, NUM_SP) # Convert back to long data.frame
+
+# Factorise visit species length
+visitData$VISIT_LENGTH <- ifelse(visitData$NUM_SP == 1,"single",
+                                 ifelse(visitData$NUM_SP %in% 2:3, "short", "long" ))
 
 # Change non-detections visits to zeros
-visitData$Presence[is.na(visitData$Presence)] <- 0
+visitData$PRESENCE[is.na(visitData$PRESENCE)] <- 0
 
 # Check number of presense and pseudo-absences
-table(visitData$Presence)
+table(visitData$PRESENCE)
 
 # CREATE EFFORT COVARIATES --------------------------
 
@@ -124,71 +168,11 @@ visitData$WOY <- visitData$TO_STARTDATE %>%
   strftime(., format = "%V") %>%
   as.numeric(.)
 
-### Calculate "flight period", i.e. approximate dates when species is observable
+# CREATE CLIMATE COVARIATES --------------------------
 
-# Create empty vector to hold flight period days of year
-flightPeriodAllWeeks <- c()
+climateDir
 
-# Loop through visits where species was detected...
-for ( i in visitData$WOY[ visitData$Presence == 1 ]) {
-  
-  # Save all days +/- 5 from positive records
-  flightPeriodAllWeeks <- c(flightPeriodAllWeeks, (i-1) : (i+1))
 
-}
-
-# Correct weeks of year that have fallen into other years
- flightPeriodAllWeeks[flightPeriodAllWeeks < 1] <- flightPeriodAllWeeks[flightPeriodAllWeeks < 1] + 52
- flightPeriodAllWeeks[flightPeriodAllWeeks > 52] <- flightPeriodAllWeeks[flightPeriodAllWeeks > 52] - 52
-
-# Get unique values
-flightPeriodAllWeeks <- unique(flightPeriodAllWeeks) 
-
-### For each unique location, find number of visits in flight period
-# (May be faster way to do this)
-
-# Add number of visits column
-visitData$nVisits <- 0
-
-# Loop through unique GRIDREF values (locations)
-for (i in unique(visitData$TO_GRIDREF)) {
-  
-  # Find number of visits in flight period
-  nVisits <- visitData[visitData$TO_GRIDREF == i & #Subset data to GRIDREF location, plus ...
-                          visitData$WOY %in% flightPeriodAllWeeks,] %>% # ... day of year in flight period days, 
-    NROW(.) #  and find number of rows (visits)
-
-  # Assign nVisits to column of location
-  visitData[visitData$TO_GRIDREF == i,]$nVisits <- nVisits
-  
-  }
-
-# - Effort: Add log of number of visits to site in year as measure of effort 
-# (but only in flight period, i.e. within +/- 5 days of any positive record)?
-
-# CONVERT GRIDREF TO METERS -------------------------
-
-# Create x and y columns
-visitData$X <- NA
-visitData$Y <- NA
-
-# Populate x and y columns using gridCoords function
-# N.B. Function find the bottom, left-hand corner of the 1km grid square, 
-# so need to add 500m
-
-for (i in 1:NROW(visitData)) { # Loop through each row
-  
-  # Add in x and y
-  visitData[i, "X"] <- gridCoords(visitData[i, "TO_GRIDREF"], units = "m")$x + 500
-  visitData[i, "Y"] <- gridCoords(visitData[i, "TO_GRIDREF"], units = "m")$y + 500
-  
-}
-
-### PROCESS COVARIATES -----------------------
-
-# Scale covariates
-visitData$WOYscaled <- as.numeric(scale(visitData$WOY))
-visitData$nVisitsLog <- as.numeric(log(visitData$nVisits))
 
 ### CONVERT TO SPATIAL DATA
 
@@ -198,9 +182,9 @@ visitDataSpatial <- visitData %>%
 
 # Plot
 ggplot() +
-  geom_point(data = subset(visitData, Presence==0), aes(x=X, y=Y),
+  geom_point(data = subset(visitData, PRESENCE == 0), aes(x=X, y=Y),
              color = "white") +
-  geom_point(data = subset(visitData, Presence==1), aes(x=X, y=Y),
+  geom_point(data = subset(visitData, PRESENCE == 1), aes(x=X, y=Y),
              color = "black") +
   geom_sf(data = st_as_sf(GB), colour = "black", fill = NA)
 
@@ -209,7 +193,6 @@ ggplot() +
 # Filter to GB
 visitData <- visitData %>%
   filter(st_intersects(visitDataSpatial, st_as_sf(GB), sparse = FALSE)[,1]) 
-
 
 ### CONVERT TO 'SP' AND KM RESOLUTION FOR INLABRU (CUE WARNING MESSAGES)
 
@@ -228,7 +211,7 @@ visitData_sp <- spTransform(visitData_sp, gsub( "units=m", "units=km", st_crs(bn
 ### CREATE MESH --------------------------------
 
 # Subset to several years for testing
-visitData_sp <- visitData_sp[ visitData_sp$YEAR > 1985 & visitData_sp$YEAR <= 1990 ,]
+#visitData_sp <- visitData_sp[ visitData_sp$YEAR > 1985 & visitData_sp$YEAR <= 1989 ,]
 
 # Max edge is range/8 as a rule of thumb
 maxEdge = estimated_range/8
@@ -237,26 +220,40 @@ mesh <- inla.mesh.2d(boundary = GB_sp,
                      loc = visitData_sp,
                      max.edge = c(1,4) * maxEdge,
                      cutoff = maxEdge/2,
-                     offset =c(1,4) * maxEdge,
+                     offset = c(1,4) * maxEdge,
                      crs = gsub( "units=m", "units=km", st_crs(bng)$proj4string ))
 
 ggplot() + 
   gg(mesh) + 
-  geom_sf(data = st_as_sf(subset(visitData_sp, Presence==0)), color = "white") +
-  geom_sf(data = st_as_sf(subset(visitData_sp, Presence==1)), color = "black") +
+  geom_sf(data = st_as_sf(subset(visitData_sp, PRESENCE == 0)), color = "white") +
+  geom_sf(data = st_as_sf(subset(visitData_sp, PRESENCE == 1)), color = "black") +
   coord_fixed() +
   geom_sf(data = st_as_sf(GB_sp), col = "black", fill = NA)
+
+### PROCESS COVARIATES -----------------------
+
+# Scale covariates
+#visitData$WOYscaled <- as.numeric(scale(visitData$WOY))
+#visitData$nVisitsLog <- as.numeric(log(visitData$nVisits))
+
+# Sort factor levels (need to convert to dummy variables)
+visitData_sp <- visitData_sp %>%
+  model.matrix(object = ~VISIT_LENGTH) %>%
+  as.data.frame() %>%
+  select(-1) %>%
+  cbind(visitData_sp, .)
+
 
 ### FIT SPATIO-TEMPORAL MODEL ----------------
 
 # Simplify year to nearest decade (trying annual model now so redundant)
 
-# floor_decade <- function(value){ return(value - value %% 10) }
-# visitData_sp$decade <- floor_decade((visitData_sp$YEAR))
-# visitData_sp$iYear <- ((visitData_sp$decade - min(visitData_sp$decade)) / 10) + 1
+floor_decade <- function(value){ return(value - value %% 10) }
+visitData_sp$decade <- floor_decade((visitData_sp$YEAR))
+visitData_sp$iYear <- ((visitData_sp$decade - min(visitData_sp$decade)) / 10) + 1
 
 # Create indices
-visitData_sp$iYear <- visitData_sp$YEAR - min(visitData_sp$YEAR) + 1
+#visitData_sp$iYear <- visitData_sp$YEAR - min(visitData_sp$YEAR) + 1
 iYear <- visitData_sp$iYear
 nYear <- length(unique(visitData_sp$iYear))
 
@@ -267,49 +264,25 @@ mySpace <- inla.spde2.pcmatern(
   prior.range = c(10 * maxEdge, 0.5),   
   prior.sigma = c(1, 0.5))
 
-### Simple space-time model with effort (linear log(nVisits)) and spatial field
-
-# Specify components
-cmp <- Presence ~  nVisitsLog +
+# Set components
+inlabruCmp  <-  PRESENCE ~
+  WOY(main = WOY , model = "rw2") + 
+  VISIT_LENGTHshort + VISIT_LENGTHsingle +
   spatial(main = coordinates,
           group = iYear,
           ngroup = nYear,
           model = mySpace,
           control.group=list(model="ar1")) +
   Intercept(1)
-
-# Fit model
-inlabruST <- bru(cmp,
-                family = "binomial",
-                data = visitData_sp,
-                options=list(verbose=TRUE))
-
-# Model summary
-summary(inlabruST)
-
-### Trialling week of year with smoothing process, currently rw2 but perhaps splines would be best?
-
-inlabruCmp  <-  ~ 
-  WOY(main = WOY , model = "rw2") +
-  nVisitsLog(main = nVisitsLog , model = "linear") + 
-  spatial(main = coordinates,
-          group = iYear,
-          ngroup = nYear,
-          model = mySpace,
-          control.group=list(model="ar1")) +
-  Intercept(1)
-
-inlabruFormula <- Presence ~ 
-  spatial + Intercept + WOY + nVisitsLog
   
 # Fit model
 inlabruST2 <- bru(components = inlabruCmp,
-                 formula = inlabruFormula,
                  family = "binomial",
                  data = visitData_sp,
                  options=list(verbose=TRUE))
 
 summary(inlabruST2)
+
 
 ### PREDICT -----------------------------------------
 
@@ -318,22 +291,20 @@ ppxl <- pixels(mesh, mask = GB_sp)
 ppxlAll <- cprod(ppxl, data.frame(iYear = seq_len(nYear)))
 
 # Predict using spatio-temporal model
+# ( N.B. exlcuding VISIT_LENGTH means including the reference factor level- long- which is what we want!)
 inlabruPred <- predict(inlabruST2, 
                        ppxlAll, 
                        ~ data.frame(iYear = iYear,
                                     lambda =  plogis(Intercept + 
                                                        spatial +
-                                                       WOY +
-                                                       nVisitsLog)))
-
-plot(inlabruST2, "WOY")
-
+                                                       max(inlabruST2$summary.random$WOY$mean)))) # max value for WOY to predict over
+# Control for WOY and list length
 # Plot
 ggplot() + 
   gg(inlabruPred, aes(fill=mean)) +
   scale_fill_viridis_c(option="magma",direction=1) +
-  geom_sf(data = st_as_sf(subset(visitData_sp, Presence==1)), color = "blue") +
-  geom_sf(data = st_as_sf(subset(visitData_sp, Presence==0)), color = "red") +
+  geom_sf(data = st_as_sf(subset(visitData_sp, PRESENCE==1)), color = "blue") +
+  geom_sf(data = st_as_sf(subset(visitData_sp, PRESENCE==0)), color = "red") +
   facet_wrap(~iYear) +
   coord_fixed() +
   geom_sf(data = st_as_sf(GB_sp), col = "black", fill = NA)
