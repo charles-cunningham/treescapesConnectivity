@@ -21,7 +21,6 @@
 library(terra) # terra' must be loaded before 'sf' due to 'geodata' dependency bug
 library(sf)
 library(tidyverse)
-library(raster)
 library(gstat)
 
 # SOURCE FUNCTIONS -----------------------------------

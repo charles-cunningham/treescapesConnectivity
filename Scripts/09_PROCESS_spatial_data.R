@@ -21,7 +21,6 @@
 library(terra) # terra' must be loaded before 'sf' due to 'geodata' dependency bug
 library(sf)
 library(tidyverse)
-library(raster)
 library(gstat)
 
 # SOURCE FUNCTIONS -----------------------------------
@@ -98,7 +97,7 @@ names(connW) <-  paste0("conn_",c("1990", "2015"))
 
 # Save aggregated spatRast for analysis
 writeRaster(connW,
-            "../Data/Spatial_data/Omniscape/omniConn_1km.tif",
+            "../Data/Spatial_data/Omniscape/omniConn_1km_forModel.tif",
             overwrite = TRUE)
 
 # CLIMATE COVARIATES (AS MULTI-YEAR GROUP SPATRASTERS)
@@ -246,7 +245,7 @@ for (i in allVar) {
   # For each layer name, i.e. each year...
   iVarInterpolated <- lapply(layerNames, function(j) {
     
-    # Create a gstat formala for interpolation for layer j
+    # Create a gstat formula for interpolation for layer j
     ijIntModel <- gstat(formula = get(j) ~ 1, # Only use location
                         locations = ~ x + y, # Location based on x,y
                         data = iVar_df, 
@@ -270,7 +269,7 @@ for (i in allVar) {
 # MASK COVARIATES TO UK DOMAIN -------------------------------
 
 # Loop through covariates (and lakes spatRast)
-for (i in c(allVar)) {
+for (i in allVar) {
   
   # Get raster object
   iVar <- get(i)
@@ -286,46 +285,23 @@ for (i in c(allVar)) {
   assign(i, iVar)
 }
 
-# CONVERT TO 'SP' AND KM RESOLUTION -----------------------------------
-# N.B. This is needed for INLA/inlabru but creates warning messages
+# CONVERT TO KM RESOLUTION -----------------------------------
+# N.B. This is needed for INLA/inlabru
 
 # VECTORS
 
-# Convert smoothUK
-smoothUK_sp <- as(st_as_sf(smoothUK), 'Spatial')
-proj4string(smoothUK_sp) <- st_crs(bng)$proj4string
-
 # Reproject smoothUK to km for inlabru (needs changing back after!)
-smoothUK_sp <- spTransform(smoothUK_sp, gsub( "units=m", "units=km",
-                                              st_crs(bng)$proj4string ))
+smoothUK <- project (smoothUK, gsub( "units=m", "units=km",
+                                     st_crs(bng)$proj4string ))
 
 # RASTERS
 
-# Convert UK_R from spatRaster to raster
-UK_R_sp <- stack(UK_R)
-
-# Reproject to km for inlabru
-extent(UK_R_sp) <- extent(c(xmin(UK_R_sp), xmax(UK_R_sp), ymin(UK_R_sp), ymax(UK_R_sp))/1000)
-projection(UK_R_sp) <- gsub("units=m", "units=km", projection(UK_R_sp))
-
-# SPATIAL GRID DATA FRAMES
-
 # Reproject covariates, and convert from sf to sp
-for (i in c(allVar)) {
-  
-  # Get spatRaster i
-  iVar <- get(i)
-  
-  # Convert from spatRaster to raster
-  iVar <- stack(iVar)
-  
+for (i in c(allVar, "UK_R")) {
+
   # Reproject to km for inlabru
-  extent(iVar) <- extent(c(xmin(iVar), xmax(iVar), ymin(iVar), ymax(iVar))/1000)
-  projection(iVar) <- gsub("units=m", "units=km", projection(iVar))
-  
-  # Assign to new spatial grid data frameobject
-    as(iVar, "SpatialGridDataFrame") %>%
-      assign(paste0(i, "_unscaled_SGDF"), ., envir = .GlobalEnv)
+  assign(i, project (get(i), gsub( "units=m", "units=km",
+                              st_crs(bng)$proj4string )))
 
 }
 
@@ -340,13 +316,12 @@ scalingParams <- data.frame(variable = allVar,
 
 # Loop through each unscaled covariate
 for (i in scalingParams$variable) {
- 
+
   # Get spatRaster object
-  iVar <- paste0(i, "_unscaled_SGDF") %>%
-    get(.)
+  iVar <- get(i)
   
   # Extract values from all iVar layers
-  iVarValues <- iVar@data %>% # Extract SGDF values 
+  iVarValues <- iVar[] %>% # Extract SGDF values 
     as.matrix %>% # Convert into matrix
     as.vector %>% # Merge layer columns into single vector
     na.omit # Remove NAs
@@ -360,37 +335,70 @@ for (i in scalingParams$variable) {
   scalingParams[ scalingParams$variable == i, "variableSD"] <- iVarSD
   
   # Use parameters to scale the data (need to convert back to raster briefly)
-  iVar <- ( stack(iVar) - iVarMean ) / iVarSD
-  iVar <- as(iVar, "SpatialGridDataFrame")
-  
+  iVar <- ( iVar - iVarMean ) / iVarSD
+
   # Overwrite object
-  assign(paste0(i, "_SGDF"), iVar)
+  assign(paste0(i, "_scaled"), iVar)
+}
+
+# GROUP CLIMATE COVARIATES FOR SPLINE FITTING --------------------------
+
+# Loop through climate variables
+for (i in climateVar) {
+  
+  # Get climate SGDF i
+  iVar <- paste0(i, "_scaled") %>% get(.)
+  
+  # Use the inla.group function to group covariate values
+  # into 'n'
+  iVar[] <- INLA::inla.group(iVar[],
+                             n = 50,
+                             method = "cut")
+  
+  # Assign to object
+  assign(paste0(i, "_grp"), iVar)
 }
 
 # CREATE INTERACTION TERMS -------------------------------------------
 
 # Broadleaf and coniferous interaction with connectivity
-coverBF_connW_SGDF <- ( stack(coverBF_SGDF) * stack(connW_SGDF) ) %>%
-  as(.,  "SpatialGridDataFrame")
-
-coverCF_connW_SGDF  <- ( stack(coverCF_SGDF) * stack(connW_SGDF) ) %>%
-  as(.,  "SpatialGridDataFrame")
+coverBF_connW <- coverBF_scaled * connW_scaled
+coverCF_connW  <- coverCF_scaled * connW_scaled
 
 # SAVE OBJECTS -------------------------------------------------------
 
+# Create directories
+dir.create("../Data/Spatial_data/DataForInlabru/spatVector",
+           recursive = TRUE, showWarnings = FALSE)
+dir.create("../Data/Spatial_data/DataForInlabru/spatRaster",
+           showWarnings = FALSE)
+
+# Save scaling parameters
+save(scalingParams,
+     file = "../Data/Spatial_data/DataForInlabru/scalingParams.RData")
+
 # Save UK vect objects
 writeVector(UK,
-            filename = "../Data/Spatial_data/Boundaries_and_CRS/StudyArea(UK)/UK.shp",
+            filename = "../Data/Spatial_data/DataForInlabru/spatVector/UK.shp",
             layer = "UK",
             overwrite = TRUE)
-writeVector(smoothUK, 
-            filename = "../Data/Spatial_data/Boundaries_and_CRS/StudyArea(UK)/smoothUK.shp",
+writeVector(smoothUK,
+            filename = "../Data/Spatial_data/DataForInlabru/spatVector/smoothUK.shp",
             layer = "smoothUK",
             overwrite = TRUE)
 
-# Save other spatial objects as .RData file
-save(UK_R_sp, smoothUK_sp, scalingParams,
-     coverBF_SGDF, coverCF_SGDF, connW_SGDF,
-     coverBF_connW_SGDF, coverCF_connW_SGDF,
-     GDD5_SGDF, WMIN_SGDF, tasCV_SGDF, soilM_SGDF, RAIN_SGDF,
-     file = "../Data/Spatial_data/DataForInlabru.RData")
+# Save other spatRasts
+for (i in c("UK_R", "coverBF", "coverCF", "connW",
+          "GDD5", "WMIN", "tasCV", "soilM", "RAIN",
+          "coverBF_scaled", "coverCF_scaled", "connW_scaled",
+          "GDD5_scaled", "WMIN_scaled", "tasCV_scaled", "soilM_scaled", "RAIN_scaled",
+          "GDD5_grp", "WMIN_grp", "tasCV_grp", "soilM_grp", "RAIN_grp",
+          "coverBF_connW", "coverCF_connW")) {
+  
+  writeRaster(get(i),
+              filename = paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+                                i,
+                                ".tif"),
+                                overwrite = TRUE)
+  
+}

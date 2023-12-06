@@ -5,56 +5,68 @@
 # 
 # Script Name: Inlabru spatio-temporal model script
 #
-# Script Description: ...
+# Script Description: Takes raw recording data set and processes, and then fits a 
+# SDM using inlabru. This version fits a spatio-temporal model with relative
+# occurrence probability as the response using a visits data structure.
 #
-# R version 4.2.3 (2023-03-15 ucrt) -- "Shortstop Beagle"
+# R version 4.3.2 (2023-10-31 ucrt) -- "Eye Holes"
 # Copyright (C) 2023 The R Foundation for Statistical Computing
 # Platform: x86_64-w64-mingw32/x64 (64-bit)
 
-# TODO DECISIONS----------------------------------------
+# TODO ----------------------------------------
 
-# - Mesh size
-# - Connectivity parameterisation: radius, resistance
-# - How to filter woodland species
-# - time periods (single time period)
-# - visit length and week of year interacting?
-# - 1d inla mesh instead of rw2?
+# - Consider rw2 or inla.mesh.1d for climate covariates
 
-# # INSTALL PACKAGES -----------------------------------
+# LOAD LIBRARIES & INSTALL PACKAGES -----------------
+
+# Change  library to R: (C: doesn't have enough space for packages):
+.libPaths("R:/rsrch/cb751/lab/Charles/R/PackageLibrary")
+
+# INSTALL PACKAGES -----------------------------------
 # #Run this code once
-# 
+#
 # # Install INLA
-# install.packages("INLA",
-#                  repos=c(getOption("repos"),
-#                          INLA="https://inla.r-inla-download.org/R/stable"),
+# install.packages("INLA", repos=c(getOption("repos"),
+#                                  INLA="https://inla.r-inla-download.org/R/stable"),
 #                  dep=TRUE)
 # 
 # # Install inlabru
-# remotes::install_github("inlabru-org/inlabru", ref = "stable")
+# install.packages("inlabru")
+#
+# # Need terra >1.7.60 to work as fixed extract issue (issue 1332) (not on CRAN at time of writing)
+# install.packages("terra", repos = "https://rspatial.r-universe.dev")
+#
+# # Install BRCmap (more complex to install as NAMESPACE issue - 
+# rgdal and rgeos included but not on CRAN)
+# Work around (hopefully this will be fixed soon): Download locally, extract from .zip, 
+# remove rgdal and rgeos from NAMESPACE file, re -zip, then run code below -
+# devtools::install_local("R:/rsrch/cb751/lab/Charles/R/PackageLibrary/BRCmap-master.zip")
 # 
-# # Install BRCmap
-# remotes::install_github("colinharrower/BRCmap")
-# 
-# # Needed to run on HPC
+# Needed to run on HPC
 # inla.binary.install()
-# 
+#
 # # Other packages as required from CRAN, i.e install.packages()
 
-# LOAD PACKAGES -----------------------------------
+# LOAD PACKAGES ---------------------------------------
 
+library(terra)
+library(sf)
+library(stars)
 library(INLA) 
 library(inlabru)
-library(sf)
 library(tidyverse)
-library(raster)
 library(BRCmap)
 library(ggplot2)
 library(grid)
 library(gridExtra)
 
+# When running on cluster implement PARDISO
+# inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
+# inla.pardiso.check()
+
 # SOURCE FUNCTIONS ----------------------------
 
-source("Treescapes/ST_SDMs/Functions/assignYearGroup().R")
+source("Functions/assignYearGroup().R")
 
 # SET PARAMETERS ---------------------------------------
 
@@ -70,45 +82,46 @@ range1 = c(1990,2000)
 range2 = c(2015,2025)
 
 # Set number of threads
-numThreads = 4
+#numThreads = 4
 
 # Set batch number/species (arg[1]) and taxa group (arg[2]), specified array in job script
-args <- commandArgs(trailingOnly = TRUE)
-batchN <- as.numeric(args[1])
-taxaGroup <- args[2]
+#args <- commandArgs(trailingOnly = TRUE)
+batchN <- 11
+taxaGroup <- "Butterflies"
 
 # Estimated range of spatial effect in km (determines mesh)
-estimated_range <- 50 
+estimated_range <- 20 
 
 # Set bitmap type for ggplot2::ggsave to work on cluster
-options(bitmapType='cairo')
-
-# SET UP INLA -----------------------------------------
-
-# When running on cluster implement PARDISO
-inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
-inla.pardiso.check()
-
-# Set number of threads
-inla.setOption("num.threads" = numThreads)
-# ...and print out
-paste(numThreads, "threads used") %>%
-  print
+#options(bitmapType = 'cairo')
 
 # DATA FILES ------------------------------------------
 
 ### SPATIAL DATA
 
-# Processed spatial files
-load("Treescapes/ST_SDMs/Data/DataForInlabru.RData")
-smoothUK <- terra::vect("Treescapes/ST_SDMs/Data/smoothUK.shp")
+# Scaling parameters
+load("../Data/Spatial_data/DataForInlabru/scalingParams.RData")
+
+# Study area boundary polygon
+# National Forest: "../Data/Spatial_data/Boundaries_and_CRS/NFC/Forest_boundary.shp"
+# Mersey Forest:  "../Data/Spatial_data/Boundaries_and_CRS/EnglandCommunityForests/Englands_Community_Forests_Nov2021.shp"
+smoothUK <- terra::vect("../Data/Spatial_data/Boundaries_and_CRS/NFC/Forest_boundary.shp")
+
+# SpatRasters
+for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
+                     pattern =  "\\.tif$")) {
+ 
+  assign(gsub(".tif", "", i),
+         rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+                                i)))
+}
 
 ### Download BNG WKT string
 # N.B. Individual filename needed for each task to prevent
 # different tasks tring to read/write at same time 
 
 # Specify temporary file to download 'bng' CRS wkt to
-tempFile <- paste0("Treescapes/ST_SDMs/Data/",batchN, "bng.prj")
+tempFile <- paste0("..//",batchN, "bng.prj")
 
 # Download file
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -122,94 +135,8 @@ unlink(tempFile)
 
 ### SPECIES DATA
 
-# LOAD IN SPECIES DATA (according to taxa group)
-
-# Bryophytes (only taxa with separate NI and GB files, so need to process)
-if(taxaGroup == "Bryophytes") {
-  
-  # Read in GB and NI files separately
-  rawDataGB <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Bryophytes/Treescapes_Bryophytes_220822.csv")
-  rawDataNI <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Bryophytes/Bryophytes_2022.rds")
-  
-  # Rename GB monad and species columns
-  rawDataGB <- rename(rawDataGB, 
-                      monad = Monad,
-                      recommended_name = AGG_NAME)
-  
-  # Process GB date columns
-  rawDataGB <- mutate(rawDataGB,
-                      startdate = paste0(YEAR1, "-", MONTH1, "-", DAY1),
-                      enddate = paste0(YEAR1, "-", MONTH1, "-", DAY1))
-  
-  # Join NI and GB together
-  rawDataUK <- bind_rows(rawDataGB, # Bind all rows together
-                         rawDataNI) %>%
-    dplyr:: select(all_of(intersect(names(rawDataGB), # Select only shared columns
-                                    names(rawDataNI)))) } 
-
-# Butterflies
-if(taxaGroup == "Butterflies") {
-  rawDataUK <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Butterflies/ccunningham_butterflies.csv") }
-
-# Carabids
-if (taxaGroup == "Carabids") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Carabids/Ground_Beetles_2022.rds")}
-
-# Caddisflies
-if (taxaGroup == "Caddisflies") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Caddisflies/Caddisflies_2022_Connected Treescapes.rds") }
-
-# Centipedes
-if (taxaGroup == "Centipedes") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Centipedes/Centipedes_2022.rds") }
-
-# Ephemeroptera
-if (taxaGroup == "Ephemeroptera") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Ephemeroptera/Ephemeroptera_2022.rds") }
-
-# Gelechiidae
-if (taxaGroup == "Gelechiidae") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Gelechiidae/Gelechiidae_2022.rds") }
-
-# Hoverflies
-if (taxaGroup == "Hoverflies") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Hoverflies/Hoverflies_2022.rds") }
-
-# Ladybirds
-if (taxaGroup == "Ladybirds") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Ladybirds/Ladybirds_2022.rds") }
-
-# Lichen
-if (taxaGroup == "Lichen") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Lichen/Lichen_2022.rds") }
-
-# Molluscs
-if (taxaGroup == "Molluscs") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Molluscs/Molluscs_2022_Connected Treescapes.rds") }
-
-# Moths
-if (taxaGroup == "Moths") {
-  rawDataUK <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Moths/ccunningham_moths.csv") }
-
-# Odonata
-if (taxaGroup == "Odonata") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Odonata/Odonata_2022.rds") }
-
-# Orthoptera
-if (taxaGroup == "Orthoptera") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Orthoptera/Orthoptera_2022.rds") }
-
-# Shieldbugs
-if (taxaGroup == "Shieldbugs") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Shieldbugs/Shieldbugs_2022.rds") }
-
-# Soldierflies
-if (taxaGroup == "Soldierflies") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Soldierflies/Soldierflies_2022.rds") }
-
-# Spiders
-if (taxaGroup == "Spiders") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Spiders/Spiders_2022.rds") }
+# Load in test data (butterflies for now)
+rawDataUK <- read.csv("../Data/Species_data/Raw_data/Butterflies/ccunningham_butterflies.csv")
 
 # FILTER AND STANDARDISE DATA FRAMES --------------------------
 
@@ -292,7 +219,7 @@ taxaData <- dplyr::select(taxaData, taxon, monad, date, year, iYear)
 
 ### GET SPECIES NAME
 
-# Set species for this job
+# Set species for this model
 iSpecies <- unique(taxaData$taxon)[batchN]
 
 # How many species/aggregates to model within taxa?
@@ -322,7 +249,7 @@ unique(taxaData$taxon) %>%
 
 # Print for run log
 paste0("Species: ", iSpecies,
-      ", batchN: ", batchN) %>%
+       ", batchN: ", batchN) %>%
   print
 
 # Set filename-friendly species name
@@ -405,13 +332,21 @@ visitData <- visitData %>%
 
 # CROP SPECIES RECORDS TO STUDY AREA --------------------------
 
-# Make visitData into sf object
-visitDataSpatial <- visitData %>%
-  st_as_sf(., coords=c("x","y"), crs = bng)
+# Make sure in km
+smoothUK <- project (smoothUK, 
+                     gsub( "units=m", "units=km",
+                           st_crs(bng)$proj4string ))
 
-# Filter to study area 
-visitData <- visitData %>%
-  filter(st_intersects(visitDataSpatial, st_as_sf(smoothUK), sparse = FALSE)[,1]) 
+# Convert to terra vector object
+visitDataSpatial <- vect(visitData, geom=c("x", "y"), crs=bng, keepgeom=TRUE)
+
+# Reproject to km from m (needed to avoid inla numeric issues)
+visitDataSpatial <- project (visitDataSpatial,
+                             gsub( "units=m", "units=km",
+                                   st_crs(bng)$proj4string ))
+
+# Mask records to within vector
+visitDataSpatial <- mask(visitDataSpatial, smoothUK)
 
 # PROCESS COVARIATES -----------------------------------
 
@@ -421,28 +356,18 @@ visitData <- visitData %>%
 # N.B. Week of the year as decimal number (00--53) using Monday as 
 # the first day of week (and typically with the first Monday 
 # of the year as day 1 of week 1). The UK convention.
-visitData$week <- visitData$date %>%
+visitDataSpatial$week <- visitDataSpatial$date %>%
   strftime(., format = "%W") %>%
   as.numeric(.)
 
 # CREATE EFFORT COVARIATE
 
 # Convert factor levels to dummy variables
-visitData <- visitData %>%
+visitDataSpatial <- visitDataSpatial %>%
   model.matrix(object = ~visitLength) %>%
   as.data.frame() %>%
   dplyr::select(-1) %>%
-  cbind(visitData, .)
-
-# CONVERT TO 'SP' AND KM RESOLUTION FOR INLABRU ----------------------
-
-# Convert visitData
-visitData_sp <- visitData
-coordinates(visitData_sp) <- c("x", "y")
-proj4string(visitData_sp) <- st_crs(bng)$proj4string
-
-# Reproject to km for inlabru (needs changing back after!)
-visitData_sp <- spTransform(visitData_sp, gsub( "units=m", "units=km", st_crs(bng)$proj4string ))
+  cbind(visitDataSpatial, .)
 
 # EXTRACT COVARIATES FOR EFFECTS PLOT -------------------------------
 # Need to extract spatial covariates over species records for plots
@@ -450,36 +375,36 @@ visitData_sp <- spTransform(visitData_sp, gsub( "units=m", "units=km", st_crs(bn
 ### Create data frame of covariate values at visit locations
 
 # Create a base data frame with iYear, presence and week (non-spatial) to build up from
-covarValues <- dplyr::select(visitData, iYear, presence, week)
+covarValues <- dplyr::select(as.data.frame(visitDataSpatial), iYear, presence, week)
 
 # Loop through spatial (random) variables
-for (i in c( "GDD5_SGDF_grp", "WMIN_SGDF_grp", "tasCV_SGDF_grp", "RAIN_SGDF_grp", "soilM_SGDF_grp",
-             "coverBF_SGDF", "coverCF_SGDF", "connW_SGDF")) {
+for (i in c( "GDD5_grp", "WMIN_grp", "tasCV_grp", "RAIN_grp", "soilM_grp",
+             "coverBF_scaled", "coverCF_scaled", "connW_scaled")) {
 
-  # Get covariate i raster stack (each layer is for time period iYear)
+  # Get covariate i spatRaster (each layer is for time period iYear)
   cov_R <- get(i)
-
+  
   # Extract values for all iYear layers and add to beginning of data frame using species records
-  covarValues <- raster::extract(stack(cov_R), visitData_sp) %>%
+  covarValues <- terra::extract(cov_R, visitDataSpatial, ID = FALSE) %>%
     cbind(covarValues) # Add existing data frame onto end
-
+  
   # Calculate correct covariate for iYear for each value
   # (i.e. record is only for one time period - we need that one)
   cov_iYear <- apply(covarValues, 1, FUN = function(x) { x[ x[ "iYear" ]] })
-
-  # Add newly created correct iYear variable values to end of data frame, removing data type suffix
-  covarValues[, gsub("_SGDF.*","", i)] <- cov_iYear
-
+  
+  # Add newly created correct iYear variable values to end of data frame, removing suffix
+  covarValues[, gsub("_.*","", i)] <- cov_iYear
+  
   # Drop now redundant columns from first columns
   covarValues <- covarValues[, -c(1,2)]
-
+  
 }
 
 ### Process climate covariate values for rug plot
 
 # Remove cover and climate variables and convert to long format
 climCovarValues <-  dplyr::select(covarValues,
-                                 -c(coverBF, coverCF, connW)) %>%
+                                  -c(coverBF, coverCF, connW)) %>%
   gather(randomEff, value, 3:NCOL(.))
 
 # Count number of each quantile value for each variable for presence/absence separately
@@ -489,25 +414,17 @@ climCovarValues <- climCovarValues %>%
   ungroup %>%
   distinct
 
-# TIDY MEMORY BEFORE MODEL RUN --------------------------------------
-
-# Remove data frames no longer needed 
-rm(visitXY, rawDataUK, taxaData,
-   visitData, visitDataSpatial)
-
-# Garbage clean
-gc()
-
 # CREATE MESH -------------------------------------------------------
 
 # Max edge is as a rule of thumb (range/3 to range/10)
 maxEdge <- estimated_range/5
 
 # Find record locations to build mesh from
-recordCoords <- coordinates(visitData_sp) %>% 
+recordCoords <- crds(visitDataSpatial) %>% 
   unique(.)
 
-mesh <- inla.mesh.2d(boundary = smoothUK_sp,
+# Create mesh
+mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK),
                      loc = recordCoords,
                      max.edge = c(1,5) * maxEdge,
                      offset = c(1,2) * maxEdge, 
@@ -517,8 +434,8 @@ mesh <- inla.mesh.2d(boundary = smoothUK_sp,
 # FIT SPATIO-TEMPORAL MODEL ---------------------------------
 
 # Create indices
-iYear <- visitData_sp$iYear
-nYear <- length(unique(visitData_sp$iYear))
+iYear <- visitDataSpatial$iYear
+nYear <- length(unique(iYear))
 
 # Define spatial SPDE priors
 mySpace <- inla.spde2.pcmatern(
@@ -536,58 +453,55 @@ ar1Hyper <- list(rho = list(prior="pc.prec",
 
 # Set components
 inlabruCmp  <-  presence ~ 0 + Intercept(1) +
-  soilM(main = soilM_SGDF_grp,
-        main_selector = "iYear",
+  soilM(main = soilM_grp,
+        main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
         hyper = randomHyper) +
-  WMIN(main = WMIN_SGDF_grp,
-       main_selector = "iYear",
+  WMIN(main = WMIN_grp,
+       main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  tasCV(main = tasCV_SGDF_grp,
-        main_selector = "iYear",
+  tasCV(main = tasCV_grp,
+        main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
         hyper = randomHyper) +
-  GDD5(main = GDD5_SGDF_grp,
-       main_selector = "iYear",
+  GDD5(main = GDD5_grp,
+       main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  RAIN(main = RAIN_SGDF_grp,
-       main_selector = "iYear",
+  RAIN(main = RAIN_grp,
+       main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  coverBF(main = coverBF_SGDF,
-          main_selector = "iYear",
+  coverBF(main = coverBF_scaled,
+          main_layer = iYear,
           model = "linear") +
-  coverCF(main = coverCF_SGDF,
-          main_selector = "iYear",
+  coverCF(main = coverCF_scaled,
+          main_layer = iYear,
           model = "linear") +
-  connectivity(main = connW_SGDF,
-               main_selector = "iYear",
+  connectivity(main = connW_scaled,
+               main_layer = iYear,
                model = "linear") +
-  BFconnINT(main = coverBF_connW_SGDF,
-            main_selector = "iYear",
+  BFconnINT(main = coverBF_connW,
+            main_layer = iYear,
             model = "linear") +
-  CFconnINT(main = coverCF_connW_SGDF,
-            main_selector = "iYear",
+  CFconnINT(main = coverCF_connW,
+            main_layer = iYear,
             model = "linear") +
   visitLengthShort(main = visitLengthShort,
-                   main_selector = "iYear",
                    model = "linear") +
   visitLengthSingle(main = visitLengthSingle,
-                    main_selector = "iYear",
                     model = "linear") +
   week(main = week,
-       main_selector = "iYear",
        model = "rw2",
        cyclic = TRUE,
        hyper = randomHyper) +
-  spaceTime(main = coordinates,
+  spaceTime(main = geometry,
             group = iYear,
             ngroup = nYear,
             model = mySpace,
@@ -596,44 +510,49 @@ inlabruCmp  <-  presence ~ 0 + Intercept(1) +
 
 # Fit model
 model <- bru(components = inlabruCmp,
-                 family = "binomial",
-                 control.family = list(link = "cloglog"),
-                 data = visitData_sp,
-                 options=list(control.fixed = fixedHyper,
-                              control.inla= list(int.strategy='eb'),
-                              control.compute = list(waic = TRUE, dic = FALSE, cpo = TRUE),
-                              verbose = TRUE))
+             family = "binomial",
+             control.family = list(link = "cloglog"),
+             data = st_as_sf(visitDataSpatial),
+             options=list(control.fixed = fixedHyper,
+                          control.inla= list(int.strategy='eb'),
+                          control.compute = list(waic = TRUE, dic = FALSE, cpo = TRUE),
+                          verbose = TRUE))
 
 # Assign model summary object and output
 modelSummary <- summary(model); modelSummary
 
 # PREDICT -----------------------------------------
 
-### Create grid prediction pixels
-ppxl <- as(UK_R_sp, "SpatialPixelsDataFrame")
+# Create grid prediction pixels
+ppxl <- mask(UK_R, smoothUK) %>%
+  crop(.,smoothUK ) %>%
+  as.points %>%
+  st_as_sf
 
 # Create multi-time period prediction pixels
-ppxlAll <- cprod(ppxl, data.frame(iYear = seq_len(nYear)))
+ppxlAll <- fm_cprod(ppxl, data.frame( iYear = seq_len(nYear)))
 
 # Predict using spatio-temporal model
 # ( N.B. exlcuding VISIT_LENGTH means including the reference factor level- long- which is what we want!)
 modelPred <- predict(model, 
-                       ppxlAll, 
-                       ~ data.frame(iYear = iYear,
-                                    lambda =  plogis( spaceTime +
-                                                        soilM +
-                                                        WMIN +
-                                                        tasCV +
-                                                        GDD5 +
-                                                        RAIN +
-                                                        coverBF +
-                                                        coverCF +
-                                                        connectivity +
-                                                        BFconnINT +
-                                                        CFconnINT +
-                                                        max(model$summary.random$week$mean) + # max value for week to predict over
-                                                        Intercept )),
-                     exclude = c("week")) # Long visit is inferred
+                     ppxlAll, 
+                     ~ data.frame(
+                                  iYear = iYear,
+                                  lambda =  1 - exp( -exp( spaceTime + # cloglog back transform
+                                                             soilM +
+                                                             WMIN +
+                                                             tasCV +
+                                                             GDD5 +
+                                                             RAIN +
+                                                             coverBF +
+                                                             coverCF +
+                                                             connectivity +
+                                                             BFconnINT +
+                                                             CFconnINT +
+                                                             # Max value for week to predict over (removed later)
+                                                             max(model$summary.random$week$mean) + 
+                                                             Intercept ))),
+                     exclude = c("week")) 
 
 # MODEL EVALUATION --------------------------
 
@@ -644,7 +563,7 @@ randomEffLabels <- c('GDD5' = "Growing degree days", 'RAIN' = "Annual precipiati
                      'soilM' = "Soil moisture", 'tasCV' = "Temperature seasonality",
                      'week' = "Week of year" , 'WMIN' = "Winter minimum temperature")
 timeLabels <- data.frame(label = c("1990 - 2000", "2015 -"), 
-                         iYear = c(1, 2))
+                         iYear = c("1", "2"))
 linearEffLabels <- c('coverBF' = "Broadleaf cover",
                      'coverCF' = "Conifereous cover",
                      'connectivity' = "Connectivity",
@@ -653,7 +572,11 @@ linearEffLabels <- c('coverBF' = "Broadleaf cover",
                      'visitLengthSingle' = "Single record visit",
                      'visitLengthShort' = "Short visit (2-3 records)")
 intLabels <- c('BF_pred' = "Broadleaf ",
-                 'CF_pred' = "Coniferous")
+               'CF_pred' = "Coniferous")
+
+# Template raster for converting from sf to terra raster objects
+template_R <- st_as_stars(UK_R)
+template_R[[1]][1:ncell(template_R)] <- NA
 
 # CALCULATE LOGCPO
 
@@ -679,11 +602,11 @@ randomEff_df <- do.call(rbind, randomEff_df)%>%
          "q0.975" = "0.975quant") %>%
   dplyr::select(ID, q0.025, q0.5, q0.975, randomEff)
 
-### 'Unscale' non-spatial random covariate values
+### Back scale non-spatial random covariate values
 
 # Apply 'unscaling' function to every row of effects data frame
 randomEff_df$unscaledID <- sapply(1:NROW(randomEff_df), function(x) {
-    
+  
   # If week, just use ID as not scaled
   if (randomEff_df$randomEff[x] == "week") {
     
@@ -691,21 +614,21 @@ randomEff_df$unscaledID <- sapply(1:NROW(randomEff_df), function(x) {
     
   } else { # Otherwise, 'unscale'!
     
-      # Extract covariate mean and sd for scaling function
-      randomEffMean <-
-        scalingParams[scalingParams$variable == randomEff_df$randomEff[x],
-                      "variableMean"]
-      randomEffSD <-
-        scalingParams[scalingParams$variable == randomEff_df$randomEff[x],
-                      "variableSD"]
-      
-      # Unscale using xSCALED = (x - xbar)/sd --> x = (xSCALED * sd) + xbar principle
-      unscaledID <- (randomEff_df$ID[x] * randomEffSD) + randomEffMean
-      
-      return(unscaledID) # Return unscaled value
-      
+    # Extract covariate mean and sd for scaling function
+    randomEffMean <-
+      scalingParams[scalingParams$variable == randomEff_df$randomEff[x],
+                    "variableMean"]
+    randomEffSD <-
+      scalingParams[scalingParams$variable == randomEff_df$randomEff[x],
+                    "variableSD"]
+    
+    # Unscale using xSCALED = (x - xbar)/sd --> x = (xSCALED * sd) + xbar principle
+    unscaledID <- (randomEff_df$ID[x] * randomEffSD) + randomEffMean
+    
+    return(unscaledID) # Return unscaled value
+    
   }})
- 
+
 # Apply 'unscaling' function to every row of record locations
 climCovarValues$unscaledValue <- sapply(1:NROW(climCovarValues), function(x) {
   
@@ -715,7 +638,7 @@ climCovarValues$unscaledValue <- sapply(1:NROW(climCovarValues), function(x) {
     return(climCovarValues$value[x])
     
   } else { # Otherwise, 'unscale'!
-  
+    
     # Extract covariate mean and sd for scaling function
     randomEffMean <- scalingParams[scalingParams$variable == climCovarValues$randomEff[x],
                                    "variableMean"]
@@ -727,7 +650,7 @@ climCovarValues$unscaledValue <- sapply(1:NROW(climCovarValues), function(x) {
     
     return(unscaledValue)
     
-    }})
+  }})
 
 ### Plot
 
@@ -745,7 +668,7 @@ randomEffPlot <- ggplot(randomEff_df) +
   geom_rug(data = subset(climCovarValues, presence == 1),
            aes(x = unscaledValue, alpha = count), linewidth = 1,
            sides = "t", show.legend = FALSE, inherit.aes = FALSE) +
-
+  
   # Thematics
   facet_wrap(~ randomEff, scale = 'free_x', labeller = as_labeller(randomEffLabels))  + 
   ggtitle("Non-linear random effects") +
@@ -758,34 +681,34 @@ randomEffPlot <- ggplot(randomEff_df) +
 
 # Loop through covariates and extract estimates
 for (i in names(linearEffLabels)) {
-
-    # For covariate i, extract effect size
-    effectSize <- modelSummary$inla$fixed[i,] %>% 
-      t %>%
-      data.frame 
+  
+  # For covariate i, extract effect size
+  effectSize <- modelSummary$inla$fixed[i,] %>% 
+    t %>% # Transpose
+    data.frame 
+  
+  # Add covariate
+  effectSize$Covariate <- i
+  
+  # If first covariate
+  if( i == names(linearEffLabels)[1]) {
     
-    # Add covariate
-    effectSize$Covariate <- i
+    # Create a new data frame
+    effectSizeAll <- effectSize
     
-    # If first covariate
-    if( i == names(linearEffLabels)[1]) {
-      
-      # Create a new data frame
-      effectSizeAll <- effectSize
-      
-    }  else {
-      
-      # Join data frames together
-      effectSizeAll <- rbind(effectSizeAll, effectSize) 
-      
-    }
+  }  else {
+    
+    # Join data frames together
+    effectSizeAll <- rbind(effectSizeAll, effectSize) 
+    
   }
+}
 
 # Plot fixed effects
 fixedEffPlot <- ggplot(effectSizeAll, 
-                     aes(y = X0.5quant, x = Covariate,
-                         ymin = X0.025quant, ymax=X0.975quant, 
-                         col = Covariate, fill = Covariate)) + 
+                       aes(y = X0.5quant, x = Covariate,
+                           ymin = X0.025quant, ymax=X0.975quant, 
+                           col = Covariate, fill = Covariate)) + 
   #specify position here
   geom_linerange(linewidth=4, colour = "lightblue") +
   ggtitle("Linear effects") +
@@ -824,33 +747,67 @@ covplot <- plot(spde.posterior(model, "spaceTime", what = "matern.covariance")) 
 
 # MEDIAN AND SD PREDICTION PLOTS
 
+### Plot median
+
+# Convert to medians to spatRast for saving/plotting
+median_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "median"],
+                           template = template_R,
+                           options = c("a_nodata = NA")),
+            st_rasterize(modelPred[modelPred$iYear == "2", "median"],
+                         template = template_R,
+                         options = c("a_nodata = NA"))) %>%
+  rast
+
+# Add names, i.e. iYear
+names(median_R) <- c("1", "2")
+
+# Convert to data frame for plotting
+median_df <- as.data.frame(median_R, xy = TRUE) %>% # Convert to data frame
+  gather(iYear, median, c("1","2" )) # Convert to long format
+
 # Plot posterior median
-predMedian <- ggplot() +
-  gg(modelPred, aes(fill = median, colour = median)) +
+predMedian <- ggplot(data = median_df) +
   ggtitle("Median posterior occupancy") +
-  geom_tile() +
+  coord_fixed() +
+  geom_tile(aes(x=x, y=y, fill = median, colour = median)) +
   scale_fill_distiller(palette = "BuGn",
                        direction = 1,
-                       guide = guide_colourbar(title = "Occupancy\nprobability"),
-                       limits = c(0,1)) +
+                       limits = c(0,1),
+                       guide = guide_colourbar(title = "Occupancy\nprobability")) +
   scale_colour_distiller(palette = "BuGn",
                          direction = 1,
-                         guide = "none",
-                         limits = c(0,1)) +
+                         limits = c(0,1),
+                         guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  geom_text(data = timeLabels,
-            mapping = aes(x = 500, y = 925, label = label)) +
+  # geom_text(data = timeLabels,
+  #           mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
-  coord_fixed() +
-  geom_sf(data = st_as_sf(smoothUK_sp), fill = "NA", colour = "black", inherit.aes = FALSE)
+  geom_sf(data = st_as_sf(smoothUK), fill = NA, colour = "black")
 
-# Plot posterior sd
-predSD <- ggplot() +
-  gg(modelPred, aes(fill = sd, colour = sd)) +
+
+### Plot posterior sd
+
+# Convert to medians to spatRast for saving/plotting
+sd_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "sd"],
+                       template = template_R,
+                       options = c("a_nodata = NA")),
+            st_rasterize(modelPred[modelPred$iYear == "2", "sd"],
+                         template = template_R,
+                         options = c("a_nodata = NA"))) %>%
+  rast
+
+# Add names, i.e. iYear
+names(sd_R) <- c("1", "2")
+
+# Convert to data frame for plotting
+sd_df <- as.data.frame(sd_R, xy = TRUE) %>% # Convert to data frame
+  gather(iYear, sd, c("1","2" )) # Convert to long format
+
+predSD <- ggplot(data = sd_df) +
   ggtitle("Posterior standard deviation") +
-  geom_tile() +
+  geom_tile(aes(x=x, y=y, fill = sd, colour = sd)) +
   scale_fill_distiller(palette = "BuGn",
                        direction = 1,
                        guide = guide_colourbar(title = "Standard\ndeviation")) +
@@ -858,68 +815,73 @@ predSD <- ggplot() +
                          direction = 1,
                          guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  geom_text(data = timeLabels,
-            mapping = aes(x = 500, y = 925, label = label)) +
+  # geom_text(data = timeLabels,
+  #           mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
   coord_fixed() +
-  geom_sf(data = st_as_sf(smoothUK_sp), fill = "NA", colour = "black", inherit.aes = FALSE)
+  geom_sf(data = st_as_sf(smoothUK), fill = NA, colour = "black")
 
 # POSTERIOR MEDIAN OF SPACE-TIME RANDOM FIELD
 
 # Predict spatio-temporal field only at link scale
 spaceTimePred <- predict(model, 
-                       ppxlAll, 
-                       ~ data.frame(iYear = iYear,
-                                    effectSize =  spaceTime ),
-                       include = c("spaceTime"))
+                         ppxlAll, 
+                         ~ data.frame(iYear = iYear,
+                                      effectSize =  spaceTime ),
+                         include = c("spaceTime"))
+
+# Convert to medians to spatRast for saving/plotting
+spaceTime_R <- c(st_rasterize(spaceTimePred[spaceTimePred$iYear == "1", "median"],
+                              template = template_R,
+                              options = c("a_nodata = NA")),
+                 st_rasterize(spaceTimePred[spaceTimePred$iYear == "2", "median"],
+                              template = template_R,
+                              options = c("a_nodata = NA"))) %>%
+  rast
+
+# Add names, i.e. iYear
+names(spaceTime_R) <- c("1", "2")
+
+# Convert to data frame for plotting
+spaceTime_df <- as.data.frame(spaceTime_R, xy = TRUE) %>% # Convert to data frame
+  gather(iYear, median, c("1","2" )) # Convert to long format
 
 # Plot
-spaceTimePlot <- ggplot() +
-  gg(spaceTimePred, aes(fill = median, colour = median)) +
+spaceTimePlot <- ggplot(data = spaceTime_df) +
   ggtitle("Spatio-temporal field")  +
-  geom_tile() +
+  geom_tile(aes(x=x, y=y, fill = median, colour = median)) +
   scale_fill_distiller(palette = "RdYlBu",
                        direction = 1,
                        guide = guide_colourbar(title = "SPDE\nposterior\nmedian"),
-                       limits = c(-1,1) * max(abs(spaceTimePred$median))) +
+                       limits = c(-1,1) * max(abs(spaceTime_df$median))) +
   scale_colour_distiller(palette = "RdYlBu",
                          direction = 1,
                          guide = "none",
-                         limits = c(-1,1) * max(abs(spaceTimePred$median))) +
+                         limits = c(-1,1) * max(abs(spaceTime_df$median))) +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  geom_text(data = timeLabels,
-            mapping = aes(x = 500, y = 925, label = label)) +
+  # geom_text(data = timeLabels,
+  #           mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
   coord_fixed() +
-  geom_sf(data = st_as_sf(smoothUK_sp), fill = "NA", colour = "black", inherit.aes = FALSE)
-  
+  geom_sf(data = st_as_sf(smoothUK), fill = NA, colour = "black", inherit.aes = FALSE)
+
 # COVER-CONNECTIVITY INTERACTION PLOTS
-
-### Find max connectivity (needed to create range of prediction values)
-
-# Extract max scaled value from SGDF data used in modelling
-maxConnectivityScaled <- connW_SGDF@data %>%
-  na.omit(.) %>%
-  unlist(.) %>%
-  max(.)
-
-# Convert back to unscaled version using scaling parameters
-# i.e. xSCALED = (x - xbar)/sd --> x = (xSCALED * sd) + xbar 
-maxConnectivity <- (maxConnectivityScaled  *
-                      scalingParams[scalingParams$variable == "connW", "variableSD"]) +
-  scalingParams[scalingParams$variable == "connW", "variableMean"]
 
 ### Set up prediction data frames
 
 # How many prediction steps?
 nSamp <- 100
 
+# Extract max scaled value
+maxConnectivity <- global(connW, fun = "max", na.rm = TRUE) %>% 
+  max
+
 # Create unscaled data frame of cover and connectivity values to predict over
-# Seperate broadleaf and coniferous data frames
+# Separate broadleaf and coniferous data frames
 BF_pred_df <-  expand.grid(BF_pred = seq(0, 1, by = 1/nSamp),
                            conn_pred = seq(0, maxConnectivity, by = maxConnectivity/nSamp))
 CF_pred_df <- expand.grid(CF_pred = seq(0, 1, by = 1/nSamp),
@@ -927,23 +889,23 @@ CF_pred_df <- expand.grid(CF_pred = seq(0, 1, by = 1/nSamp),
 
 ### Scale covariates
 
-# Scale the prediction steps for broadleaf and coniferous woodland seperately, and connectivity
-# N.B. Have to name columns the same as the original SGDF datasets!
-BF_pred_df$coverBF_SGDF <- ( BF_pred_df$BF_pred - 
-  scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
+# Scale the prediction steps for broadleaf and coniferous woodland separately, and connectivity
+# N.B. Have to name columns the same as the original datasets!
+BF_pred_df$coverBF_scaled <- ( BF_pred_df$BF_pred - 
+                               scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
   scalingParams[scalingParams$variable == "coverBF", "variableSD"]
 
-CF_pred_df$coverCF_SGDF <- ( CF_pred_df$CF_pred - 
-  scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
+CF_pred_df$coverCF_scaled <- ( CF_pred_df$CF_pred - 
+                               scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
   scalingParams[scalingParams$variable == "coverCF", "variableSD"]
 
-BF_pred_df$connW_SGDF <- CF_pred_df$connW_SGDF <- # N.B. Connectivity is the same for both cover types
+BF_pred_df$connW_scaled <- CF_pred_df$connW_scaled <- # N.B. Connectivity is the same for both cover types
   (BF_pred_df$conn_pred - scalingParams[scalingParams$variable == "connW", "variableMean"]) /
   scalingParams[scalingParams$variable == "connW", "variableSD"]
 
 # Calculate scaled interaction terms for prediction
-BF_pred_df$coverBF_connW_SGDF <- BF_pred_df$coverBF_SGDF * BF_pred_df$connW_SGDF
-CF_pred_df$coverCF_connW_SGDF <- CF_pred_df$coverCF_SGDF * CF_pred_df$connW_SGDF
+BF_pred_df$coverBF_connW <- BF_pred_df$coverBF_scaled * BF_pred_df$connW_scaled
+CF_pred_df$coverCF_connW <- CF_pred_df$coverCF_scaled * CF_pred_df$connW_scaled
 
 ### Create 'unscaled' vectors of covariate values where species is present for plot
 
@@ -951,34 +913,34 @@ CF_pred_df$coverCF_connW_SGDF <- CF_pred_df$coverCF_SGDF * CF_pred_df$connW_SGDF
 # broadleaf and coniferous woodland, and connectivity
 presentCoverBF <- subset(covarValues, presence == 1)$coverBF
 presentCoverBF <-
-  ((presentCoverBF *  scalingParams[scalingParams$variable == "coverBF", "variableSD"]) +
+  ((presentCoverBF * scalingParams[scalingParams$variable == "coverBF", "variableSD"]) +
      scalingParams[scalingParams$variable == "coverBF", "variableMean"])
 
 presentCoverCF <- subset(covarValues, presence == 1)$coverCF
 presentCoverCF <-
-  ((presentCoverCF *  scalingParams[scalingParams$variable == "coverCF", "variableSD"]) +
+  ((presentCoverCF * scalingParams[scalingParams$variable == "coverCF", "variableSD"]) +
      scalingParams[scalingParams$variable == "coverCF", "variableMean"])
 
 presentConnW <- subset(covarValues, presence == 1)$connW
 presentConnW <-
-  ((presentConnW *  scalingParams[scalingParams$variable == "connW", "variableSD"]) +
+  ((presentConnW * scalingParams[scalingParams$variable == "connW", "variableSD"]) +
      scalingParams[scalingParams$variable == "connW", "variableMean"])
 
-# Join unscaled covariate values together, annd take unique values to speed up later steps
- presentFixedEff <- data.frame(presentCoverBF, presentCoverCF, presentConnW) %>%
+# Join unscaled covariate values together, and take unique values to speed up later steps
+presentFixedEff <- data.frame(presentCoverBF, presentCoverCF, presentConnW) %>%
   distinct
- 
- # Remove obsolete objects
- rm(presentCoverBF, presentCoverCF, presentConnW)
+
+# Remove obsolete objects
+rm(presentCoverBF, presentCoverCF, presentConnW)
 
 ### Predict
 
 # Predict broadleaf cover and connectivity interaction at link scale
 BFconnINTpred <- predict(model,
                          BF_pred_df,
-                         formula = ~ coverBF_eval(coverBF_SGDF) +
-                           connectivity_eval(connW_SGDF) +
-                           BFconnINT_eval(coverBF_connW_SGDF),
+                         formula = ~ coverBF_eval(coverBF_scaled) +
+                           connectivity_eval(connW_scaled) +
+                           BFconnINT_eval(coverBF_connW),
                          exclude = c("spaceTime", "week",
                                      "soilM",  "WMIN", "tasCV", "GDD5", "RAIN",
                                      "coverCF", "CFconnINT"))
@@ -986,9 +948,9 @@ BFconnINTpred <- predict(model,
 # Predict coniferous cover and connectivity interaction at link scale
 CFconnINTpred <- predict(model,
                          CF_pred_df,
-                         formula = ~ coverCF_eval(coverCF_SGDF) +
-                           connectivity_eval(connW_SGDF) +
-                           CFconnINT_eval(coverCF_connW_SGDF),
+                         formula = ~ coverCF_eval(coverCF_scaled) +
+                           connectivity_eval(connW_scaled) +
+                           CFconnINT_eval(coverCF_connW),
                          exclude = c("spaceTime", "week",
                                      "soilM",  "WMIN", "tasCV", "GDD5", "RAIN",
                                      "coverBF", "BFconnINT"))
@@ -1008,32 +970,32 @@ allPred <- cbind(BFconnINTpred[, c("BF_pred", "conn_pred", "BFmedian" )],
 # find if there are any of these values that is within the prediction bin (i.e. x +- max/nSamp)
 # for the respective covariate
 allPred$BFpresent <- mapply( x = allPred$BF_pred, y = allPred$conn_pred,
-                                 FUN = function(x, y)
-                                   
-                                   any((x - 1 / nSamp) < presentFixedEff$presentCoverBF & 
-                                         (x + 1 / nSamp) > presentFixedEff$presentCoverBF  &
-                                         (y - maxConnectivity / nSamp) < presentFixedEff$presentConnW  &
-                                         (y + maxConnectivity / nSamp) > presentFixedEff$presentConnW ))
+                             FUN = function(x, y)
+                               
+                               any((x - 1 / nSamp) < presentFixedEff$presentCoverBF & 
+                                     (x + 1 / nSamp) > presentFixedEff$presentCoverBF  &
+                                     (y - maxConnectivity / nSamp) < presentFixedEff$presentConnW  &
+                                     (y + maxConnectivity / nSamp) > presentFixedEff$presentConnW ))
 
 allPred$CFpresent <- mapply( x = allPred$CF_pred, y = allPred$conn_pred,
-                                 FUN = function(x, y)
-                                   
-                                   any((x - 1 / nSamp) < presentFixedEff$presentCoverCF &
-                                         (x + 1 / nSamp) > presentFixedEff$presentCoverCF  &
-                                         (y - maxConnectivity / nSamp) < presentFixedEff$presentConnW  &
-                                         (y + maxConnectivity / nSamp) > presentFixedEff$presentConnW ))
+                             FUN = function(x, y)
+                               
+                               any((x - 1 / nSamp) < presentFixedEff$presentCoverCF &
+                                     (x + 1 / nSamp) > presentFixedEff$presentCoverCF  &
+                                     (y - maxConnectivity / nSamp) < presentFixedEff$presentConnW  &
+                                     (y + maxConnectivity / nSamp) > presentFixedEff$presentConnW ))
 
 # Create separate column where prediction is replaced with 'NA' if no presence records from the cell
 allPred <-  allPred %>%
   mutate(BFmedianPres = if_else(BFpresent == TRUE, BFmedian, NA)) %>%
   mutate(CFmedianPres = if_else(CFpresent == TRUE, CFmedian, NA))
-  
+
 # Convert to long data format
 allPred <- allPred %>% 
   gather(coverType, cover_pred, "BF_pred" , "CF_pred") %>%
   mutate(median = if_else(coverType == "BF_pred", BFmedian , CFmedian )) %>%
   mutate(medianPres = if_else(coverType == "BF_pred", BFmedianPres , CFmedianPres ))
-  
+
 ### Plot
 
 # Plot broadleaf and coniferous cover-connectivity interaction
@@ -1063,15 +1025,15 @@ intPlot <- ggplot(allPred, aes(x = cover_pred, y = conn_pred, z = median)) +
 ### JOINT EVALUATION PLOT
 
 evalPlot <- arrangeGrob(predMedian, predSD ,
-             fixedEffPlot, intPlot ,
-             randomEffPlot, spaceTimePlot,
-             nrow = 3, ncol = 4,
-             widths=c(1, 1, 1, 3), 
-             layout_matrix = rbind(c(1, 1, 1, 2),
-                                   c(3, 3, 4, 4),
-                                   c(5, 5, 5, 6)),
-             top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
-                                  gp = grid::gpar(fontsize=20)))
+                        fixedEffPlot, intPlot ,
+                        randomEffPlot, spaceTimePlot,
+                        nrow = 3, ncol = 4,
+                        widths=c(1, 1, 1, 3), 
+                        layout_matrix = rbind(c(1, 1, 1, 2),
+                                              c(3, 3, 4, 4),
+                                              c(5, 5, 5, 6)),
+                        top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
+                                             gp = grid::gpar(fontsize=20)))
 
 # Compose matern plot
 spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
@@ -1091,20 +1053,29 @@ if (!dir.exists(iSpeciesDir)) {
              recursive = TRUE)
 }
 
-# Save objects(model fit, summary, prediction, and effects plot)
+### Save objects
+
+# Model
 save(model,
      file = paste0(iSpeciesDir,
-       "/modelFit.RData"))
-
+                   "/modelFit.RData"))
+# Model summary
 save(modelSummary,
      file = paste0(iSpeciesDir,
-       "/modelSummary.RData"))
+                   "/modelSummary.RData"))
 
+# Model prediction object
 save(modelPred,
      file = paste0(iSpeciesDir,
-       "/modelPred.RData"))
+                   "/modelPred.RData"))
 
-# Save evaluation plot
+# Posterior median relative occurrence probability prediction
+writeRaster(median_R,
+            file = paste0(iSpeciesDir,
+                          "/medianPred.tif"),
+            overwrite= TRUE)
+
+# Evaluation plot
 ggsave(paste0(iSpeciesDir,
               "/effectsPlot_range_", estimated_range,
               "_logCPO_", logCPO, ".png"),
@@ -1113,7 +1084,7 @@ ggsave(paste0(iSpeciesDir,
        units = "px", dpi = 400,
        limitsize = FALSE)
 
-# Save SPDE parameter posterior (range and variance) and
+# SPDE parameter posterior (range and variance) and
 # matern correlation and covariance plot
 ggsave(paste0(iSpeciesDir,
               "/MatCorCovPlot_range_", estimated_range,
@@ -1186,4 +1157,37 @@ ggsave(paste0(iSpeciesDir,
 # 
 # # Enter directly as component using inbuilt spatial grid data frame recognition
 # 
-# ... + soilST(main = soilM_SGDF, main_selector = "iYear", model = "linear")
+# ... + soilST(main = soilM_SGDF, main_layer = iYear, model = "linear")
+
+
+
+
+# SAVE -----------------------------------------
+
+# Assign objects to species specific name (model fit, summary, prediction)
+assign(paste0(iSpeciesTidy, "_STmodel"), inlabruST)
+assign(paste0(iSpeciesTidy, "_STmodelSummary"), summary(inlabruST))
+assign(paste0(iSpeciesTidy, "_STpred"), inlabruPred)
+
+# Save objects(model fit, summary, prediction)
+save(list = paste0(iSpeciesTidy,
+                   "_STmodel"),
+     file = paste0(
+       "Treescapes/ST_SDMs/Output/LocalTest/",
+       iSpeciesTidy,
+       ".fit.Rdata"))
+
+save(list = paste0(iSpeciesTidy,
+                   "_STmodelSummary"),
+     file = paste0(
+       "Treescapes/ST_SDMs/Output/LocalTest/",
+       iSpeciesTidy,
+       ".summary.Rdata"))
+
+save(list = paste0(iSpeciesTidy,
+                   "_STpred"),
+     file = paste0(
+       "Treescapes/ST_SDMs/Output/LocalTest/",
+       iSpeciesTidy,
+       ".pred.RData"))
+

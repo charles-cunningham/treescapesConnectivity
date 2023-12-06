@@ -37,12 +37,6 @@ dataDir <- paste0("../Data/Species_data/SDMs/")
 # Create empty data frame to populate with all species level effects
 allSpEff_df <- data.frame()
 
-# Create empty data frame to populate with woodland species effects
-#allWoodSpEff_df <- data.frame()
-
-# Create empty data frame to populate with taxa group summaries
-#allTaxaEff_df <- data.frame()
-
 # Loop through each taxa group here
 for (i in taxaGroups) {
   
@@ -149,7 +143,7 @@ for (i in unique(duplicates$species)) {# For each duplicate species
 
 # SAVE DATA FRAME -----------------------------------------------
 
-save(allSpEff_df, #allWoodSpEff_df, allTaxaEff_df,
+save(allSpEff_df,
      file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 
 # CREATE DISTRIBUTION SPATRASTS ----------------------------------

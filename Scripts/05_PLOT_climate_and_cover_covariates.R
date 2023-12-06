@@ -3,11 +3,11 @@
 # Author: Charles Cunningham
 # Email: charles.cunningham@york.ac.uk
 # 
-# Script Name: Plot climate and land cover covariates
+# Script Name: Plot unprocessed climate and land cover covariates
 #
 # Script Description: First create national boundary files to be 
 # used for plots. Then source and neatly plot LCM woodland cover,
-# as well as the four climate covariates for the UK.
+# as well as the five climate covariates for the UK.
 # Can be used in SI if needed.
 
 # LOAD LIBRARIES & INSTALL PACKAGES ----------------------
