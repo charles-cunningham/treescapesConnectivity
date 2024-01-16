@@ -9,30 +9,32 @@
 # SDM using inlabru. This version fits a spatio-temporal model with relative
 # occurrence probability as the response using a visits data structure.
 #
-# R version 4.3.2 (2023-10-31 ucrt) -- "Eye Holes"
-# Copyright (C) 2023 The R Foundation for Statistical Computing
-# Platform: x86_64-w64-mingw32/x64 (64-bit)
+# R version 4.2.1 (2022-06-23) -- "Funny-Looking Kid"
+# Copyright (C) 2022 The R Foundation for Statistical Computing
+# Platform: x86_64-pc-linux-gnu (64-bit)
 
-# TODO ----------------------------------------
 
-# - Consider rw2 or inla.mesh.1d for climate covariates
+# TODO DECISIONS----------------------------------------
 
-# LOAD LIBRARIES & INSTALL PACKAGES -----------------
+# - Mesh size
+# - Connectivity parameterisation: radius, resistance
+# - How to filter woodland species
+# - time periods (single time period)
+# - visit length and week of year interacting?
+# - 1d inla mesh instead of rw2?
 
-# Change  library to R: (C: doesn't have enough space for packages):
-.libPaths("R:/rsrch/cb751/lab/Charles/R/PackageLibrary")
-
-# INSTALL PACKAGES -----------------------------------
+# # INSTALL PACKAGES -----------------------------------
 # #Run this code once
-#
+# 
 # # Install INLA
-# install.packages("INLA", repos=c(getOption("repos"),
-#                                  INLA="https://inla.r-inla-download.org/R/stable"),
+# install.packages("INLA",
+#                  repos=c(getOption("repos"),
+#                          INLA="https://inla.r-inla-download.org/R/stable"),
 #                  dep=TRUE)
 # 
 # # Install inlabru
 # install.packages("inlabru")
-#
+# 
 # # Need terra >1.7.60 to work as fixed extract issue (issue 1332) (not on CRAN at time of writing)
 # install.packages("terra", repos = "https://rspatial.r-universe.dev")
 #
@@ -42,32 +44,28 @@
 # remove rgdal and rgeos from NAMESPACE file, re -zip, then run code below -
 # devtools::install_local("R:/rsrch/cb751/lab/Charles/R/PackageLibrary/BRCmap-master.zip")
 # 
-# Needed to run on HPC
+# # Needed to run on HPC
 # inla.binary.install()
-#
+# 
 # # Other packages as required from CRAN, i.e install.packages()
 
-# LOAD PACKAGES ---------------------------------------
+# LOAD PACKAGES -----------------------------------
 
-library(terra)
-library(sf)
-library(stars)
 library(INLA) 
 library(inlabru)
+library(sf)
+library(terra)
+library(stars)
 library(tidyverse)
 library(BRCmap)
 library(ggplot2)
 library(grid)
 library(gridExtra)
 
-# When running on cluster implement PARDISO
-# inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
-# inla.pardiso.check()
-
 # SOURCE FUNCTIONS ----------------------------
 
-source("Functions/assignYearGroup().R")
-source("Functions/createMesh1D().R")
+source("Treescapes/ST_SDMs/Functions/assignYearGroup().R")
+source("Treescapes/ST_SDMs/Functions/createMesh1D().R")
 
 # SET PARAMETERS ---------------------------------------
 
@@ -83,37 +81,53 @@ range1 = c(1990,2000)
 range2 = c(2015,2025)
 
 # Set number of threads
-#numThreads = 4
+numThreads = 4
 
-# Set batch number/species (arg[1]) and taxa group (arg[2]), specified array in job script
-#args <- commandArgs(trailingOnly = TRUE)
-batchN <- 11
-taxaGroup <- "Carabids"
+# Set batch number/species (as.numeric(args[1])) and taxa group (arg[2]), specified array in job script
+args <- commandArgs(trailingOnly = TRUE)
+batchN <- as.numeric(args[1])
+taxaGroup <- args[2]
 
 # Estimated range of spatial effect in km (determines mesh)
-estimated_range <- 20 
+estimated_range <- 50 
 
 # Set bitmap type for ggplot2::ggsave to work on cluster
-#options(bitmapType = 'cairo')
+options(bitmapType='cairo')
+
+# SET UP INLA -----------------------------------------
+
+# When running on cluster implement PARDISO
+inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
+inla.pardiso.check()
+
+# Set number of threads
+inla.setOption("num.threads" = numThreads)
+# ...and print out
+paste(numThreads, "threads used") %>%
+  print
 
 # DATA FILES ------------------------------------------
 
 ### SPATIAL DATA
 
 # Scaling parameters
-load("../Data/Spatial_data/DataForInlabru/scalingParams.RData")
-
-# Study area boundary polygon
-# National Forest: "../Data/Spatial_data/Boundaries_and_CRS/NFC/Forest_boundary.shp"
-# Mersey Forest:  "../Data/Spatial_data/Boundaries_and_CRS/EnglandCommunityForests/Englands_Community_Forests_Nov2021.shp"
-smoothUK <- terra::vect("../Data/Spatial_data/Boundaries_and_CRS/NFC/Forest_boundary.shp")
+load("Treescapes/ST_SDMs/Data/DataForInlabru/scalingParams.RData")
 
 # SpatRasters
-for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
+for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatRaster",
                      pattern =  "\\.tif$")) {
  
   assign(gsub(".tif", "", i),
-         rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+         rast(paste0("Treescapes/ST_SDMs/Data/DataForInlabru/spatRaster/",
+                                i))) 
+}
+
+# SpatVectors
+for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector",
+                     pattern =  "\\.shp$")) {
+ 
+  assign(gsub(".shp", "", i),
+         vect(paste0("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector/",
                                 i)))
 }
 
@@ -122,7 +136,7 @@ for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
 # different tasks tring to read/write at same time 
 
 # Specify temporary file to download 'bng' CRS wkt to
-tempFile <- paste0("..//",batchN, "bng.prj")
+tempFile <- paste0("Treescapes/ST_SDMs/Data/",batchN, "bng.prj")
 
 # Download file
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -136,8 +150,94 @@ unlink(tempFile)
 
 ### SPECIES DATA
 
-# Load in test data (butterflies for now)
-rawDataUK <- readRDS("../Data/Species_data/Raw_data/Carabids/Ground_Beetles_2022.rds")
+# LOAD IN SPECIES DATA (according to taxa group)
+
+# Bryophytes (only taxa with separate NI and GB files, so need to process)
+if(taxaGroup == "Bryophytes") {
+  
+  # Read in GB and NI files separately
+  rawDataGB <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Bryophytes/Treescapes_Bryophytes_220822.csv")
+  rawDataNI <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Bryophytes/Bryophytes_2022.rds")
+  
+  # Rename GB monad and species columns
+  rawDataGB <- rename(rawDataGB, 
+                      monad = Monad,
+                      recommended_name = AGG_NAME)
+  
+  # Process GB date columns
+  rawDataGB <- mutate(rawDataGB,
+                      startdate = paste0(YEAR1, "-", MONTH1, "-", DAY1),
+                      enddate = paste0(YEAR1, "-", MONTH1, "-", DAY1))
+  
+  # Join NI and GB together
+  rawDataUK <- bind_rows(rawDataGB, # Bind all rows together
+                         rawDataNI) %>%
+    dplyr:: select(all_of(intersect(names(rawDataGB), # Select only shared columns
+                                    names(rawDataNI)))) } 
+
+# Butterflies
+if(taxaGroup == "Butterflies") {
+  rawDataUK <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Butterflies/ccunningham_butterflies.csv") }
+
+# Carabids
+if (taxaGroup == "Carabids") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Carabids/Ground_Beetles_2022.rds")}
+
+# Caddisflies
+if (taxaGroup == "Caddisflies") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Caddisflies/Caddisflies_2022_Connected Treescapes.rds") }
+
+# Centipedes
+if (taxaGroup == "Centipedes") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Centipedes/Centipedes_2022.rds") }
+
+# Ephemeroptera
+if (taxaGroup == "Ephemeroptera") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Ephemeroptera/Ephemeroptera_2022.rds") }
+
+# Gelechiidae
+if (taxaGroup == "Gelechiidae") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Gelechiidae/Gelechiidae_2022.rds") }
+
+# Hoverflies
+if (taxaGroup == "Hoverflies") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Hoverflies/Hoverflies_2022.rds") }
+
+# Ladybirds
+if (taxaGroup == "Ladybirds") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Ladybirds/Ladybirds_2022.rds") }
+
+# Lichen
+if (taxaGroup == "Lichen") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Lichen/Lichen_2022.rds") }
+
+# Molluscs
+if (taxaGroup == "Molluscs") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Molluscs/Molluscs_2022_Connected Treescapes.rds") }
+
+# Moths
+if (taxaGroup == "Moths") {
+  rawDataUK <- read.csv("Treescapes/ST_SDMs/Data/Raw_data/Moths/ccunningham_moths.csv") }
+
+# Odonata
+if (taxaGroup == "Odonata") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Odonata/Odonata_2022.rds") }
+
+# Orthoptera
+if (taxaGroup == "Orthoptera") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Orthoptera/Orthoptera_2022.rds") }
+
+# Shieldbugs
+if (taxaGroup == "Shieldbugs") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Shieldbugs/Shieldbugs_2022.rds") }
+
+# Soldierflies
+if (taxaGroup == "Soldierflies") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Soldierflies/Soldierflies_2022.rds") }
+
+# Spiders
+if (taxaGroup == "Spiders") {
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Spiders/Spiders_2022.rds") }
 
 # FILTER AND STANDARDISE DATA FRAMES --------------------------
 
@@ -250,7 +350,7 @@ unique(taxaData$taxon) %>%
 
 # Print for run log
 paste0("Species: ", iSpecies,
-       ", batchN: ", batchN) %>%
+      ", batchN: ", batchN) %>%
   print
 
 # Set filename-friendly species name
@@ -415,6 +515,14 @@ climCovarValues <- climCovarValues %>%
   ungroup %>%
   distinct
 
+# TIDY MEMORY BEFORE MODEL RUN --------------------------------------
+
+# Remove data frames no longer needed 
+rm(visitXY, rawDataUK, taxaData, visitData)
+
+# Garbage clean
+gc()
+
 # CREATE MESH -------------------------------------------------------
 
 # Max edge is as a rule of thumb (range/3 to range/10)
@@ -424,7 +532,6 @@ maxEdge <- estimated_range/5
 recordCoords <- crds(visitDataSpatial) %>% 
   unique(.)
 
-# Create mesh
 mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK),
                      loc = recordCoords,
                      max.edge = c(1,5) * maxEdge,
@@ -433,26 +540,21 @@ mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK),
                      crs = gsub( "units=m", "units=km", st_crs(bng)$proj4string ))
 
 # Create covariate 1D meshes
-GDD5_matern1D <- createMesh1D(GDD5_scaled, 50) %>%
-  inla.spde2.pcmatern(.,
-                      prior.range = c(1, 0.5),
-                      prior.sigma = c(1, 0.5))
-WMIN_matern1D <- createMesh1D(WMIN_scaled, 50) %>%
-  inla.spde2.pcmatern(.,
-                      prior.range = c(1, 0.5),
-                      prior.sigma = c(1, 0.5))
-tasCV_matern1D <- createMesh1D(tasCV_scaled, 50) %>%
-  inla.spde2.pcmatern(.,
-                      prior.range = c(1, 0.5),
-                      prior.sigma = c(1, 0.5))
-RAIN_matern1D <- createMesh1D(RAIN_scaled, 50) %>%
-  inla.spde2.pcmatern(.,
-                      prior.range = c(1, 0.5),
-                      prior.sigma = c(1, 0.5))
-soilM_matern1D <- createMesh1D(soilM_scaled, 50) %>%
-  inla.spde2.pcmatern(.,
-                      prior.range = c(1, 0.5),
-                      prior.sigma = c(1, 0.5))
+GDD5_matern1D <- inla.spde2.pcmatern(createMesh1D(GDD5_scaled, 50),
+                                     prior.range = c(1, 0.5),
+                                     prior.sigma = c(1, 0.5))
+WMIN_matern1D <- inla.spde2.pcmatern(createMesh1D(WMIN_scaled, 50),
+                                     prior.range = c(1, 0.5),
+                                     prior.sigma = c(1, 0.5))
+tasCV_matern1D <- inla.spde2.pcmatern(createMesh1D(tasCV_scaled, 50),
+                                      prior.range = c(1, 0.5),
+                                      prior.sigma = c(1, 0.5))
+RAIN_matern1D <- inla.spde2.pcmatern(createMesh1D(RAIN_scaled, 50),
+                                     prior.range = c(1, 0.5),
+                                     prior.sigma = c(1, 0.5))
+soilM_matern1D <- inla.spde2.pcmatern(createMesh1D(soilM_scaled, 50),
+                                      prior.range = c(1, 0.5),
+                                      prior.sigma = c(1, 0.5))
 
 # FIT SPATIO-TEMPORAL MODEL ---------------------------------
 
@@ -477,20 +579,20 @@ ar1Hyper <- list(rho = list(prior="pc.prec",
 # Set components
 inlabruCmp  <-  presence ~ 0 + Intercept(1) +
   GDD5(main = GDD5_scaled,
-        main_layer = iYear,
-        model = GDD5_matern1D) +
+       main_layer = iYear,
+       model = GDD5_matern1D) +
   WMIN(main = WMIN_scaled,
        main_layer = iYear,
        model = WMIN_matern1D) +
   tasCV(main = tasCV_scaled,
-       main_layer = iYear,
-       model = tasCV_matern1D) +
+        main_layer = iYear,
+        model = tasCV_matern1D) +
   RAIN(main = RAIN_scaled,
        main_layer = iYear,
        model = RAIN_matern1D) +
   soilM(main = soilM_scaled,
-       main_layer = iYear,
-       model = soilM_matern1D) +
+        main_layer = iYear,
+        model = soilM_matern1D) +
   coverBF(main = coverBF_scaled,
           main_layer = iYear,
           model = "linear") +
@@ -659,25 +761,25 @@ randomEff_df$unscaledID <- sapply(1:NROW(randomEff_df), function(x) {
 
 # Apply 'unscaling' function to every row of record locations
 climCovarValues$unscaledValue <- sapply(1:NROW(climCovarValues), function(x) {
-
+  
   # If week, just use value as not scaled
   if (climCovarValues$randomEff[x] == "week") {
-
+    
     return(climCovarValues$value[x])
-
+    
   } else { # Otherwise, 'unscale'!
-
+    
     # Extract covariate mean and sd for scaling function
     randomEffMean <- scalingParams[scalingParams$variable == climCovarValues$randomEff[x],
                                    "variableMean"]
     randomEffSD <- scalingParams[scalingParams$variable == climCovarValues$randomEff[x],
                                  "variableSD"]
-
+    
     # Unscale using xSCALED = (x - xbar)/sd --> x = (xSCALED * sd) + xbar principle
     unscaledValue <- (climCovarValues$value[x] * randomEffSD) + randomEffMean
-
+    
     return(unscaledValue)
-
+    
   }})
 
 ### Plot
@@ -1053,15 +1155,15 @@ intPlot <- ggplot(allPred, aes(x = cover_pred, y = conn_pred, z = median)) +
 ### JOINT EVALUATION PLOT
 
 evalPlot <- arrangeGrob(predMedian, predSD ,
-                        fixedEffPlot, intPlot ,
-                        randomEffPlot, spaceTimePlot,
-                        nrow = 3, ncol = 4,
-                        widths=c(1, 1, 1, 3), 
-                        layout_matrix = rbind(c(1, 1, 1, 2),
-                                              c(3, 3, 4, 4),
-                                              c(5, 5, 5, 6)),
-                        top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
-                                             gp = grid::gpar(fontsize=20)))
+             fixedEffPlot, intPlot ,
+             randomEffPlot, spaceTimePlot,
+             nrow = 3, ncol = 4,
+             widths=c(1, 1, 1, 3), 
+             layout_matrix = rbind(c(1, 1, 1, 2),
+                                   c(3, 3, 4, 4),
+                                   c(5, 5, 5, 6)),
+             top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
+                                  gp = grid::gpar(fontsize=20)))
 
 # Compose matern plot
 spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
@@ -1186,36 +1288,4 @@ ggsave(paste0(iSpeciesDir,
 # # Enter directly as component using inbuilt spatial grid data frame recognition
 # 
 # ... + soilST(main = soilM_SGDF, main_layer = iYear, model = "linear")
-
-
-
-
-# SAVE -----------------------------------------
-
-# Assign objects to species specific name (model fit, summary, prediction)
-assign(paste0(iSpeciesTidy, "_STmodel"), inlabruST)
-assign(paste0(iSpeciesTidy, "_STmodelSummary"), summary(inlabruST))
-assign(paste0(iSpeciesTidy, "_STpred"), inlabruPred)
-
-# Save objects(model fit, summary, prediction)
-save(list = paste0(iSpeciesTidy,
-                   "_STmodel"),
-     file = paste0(
-       "Treescapes/ST_SDMs/Output/LocalTest/",
-       iSpeciesTidy,
-       ".fit.Rdata"))
-
-save(list = paste0(iSpeciesTidy,
-                   "_STmodelSummary"),
-     file = paste0(
-       "Treescapes/ST_SDMs/Output/LocalTest/",
-       iSpeciesTidy,
-       ".summary.Rdata"))
-
-save(list = paste0(iSpeciesTidy,
-                   "_STpred"),
-     file = paste0(
-       "Treescapes/ST_SDMs/Output/LocalTest/",
-       iSpeciesTidy,
-       ".pred.RData"))
 

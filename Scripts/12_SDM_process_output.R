@@ -141,9 +141,45 @@ for (i in unique(duplicates$species)) {# For each duplicate species
   allSpEff_df <- anti_join(allSpEff_df, dropSpeciesAll)
 }
 
+# RESTRUCTURE DATA FRAME ------------------------------
+
+# Drop unneeded columns, then spread dataframe so that each effect mean, sd, and
+# quantile is a separate column
+meta_df <-
+  dplyr::select( allSpEff_df, -c("mode", "kld", "X0.5quant", )) %>%
+  pivot_wider(
+    names_from = effect,
+    values_from = c( "mean", "sd", "X0.025quant", "X0.975quant" ))
+
+# IDENTIFY WOODLAND AND CONNECTIVITY RELATIONSHIPS --------
+
+# Create discrete woodland association categories for BF and CF woodland
+meta_df <- mutate( meta_df,
+                   BFwoodSp = case_when(
+                     X0.025quant_coverBF > 0 & X0.975quant_coverBF > 0 ~ "Prefer woodland",
+                     X0.025quant_coverBF < 0 & X0.975quant_coverBF < 0 ~ "Avoid woodland",
+                     TRUE ~ "Generalist"))
+meta_df <- mutate( meta_df,
+                   CFwoodSp = case_when(
+                     X0.025quant_coverCF > 0 & X0.975quant_coverCF > 0 ~ "Prefer woodland",
+                     X0.025quant_coverCF < 0 & X0.975quant_coverCF < 0 ~ "Avoid woodland",
+                     TRUE ~ "Generalist"))
+meta_df <- mutate( meta_df,
+                   woodSp = case_when(
+                     BFwoodSp == "Prefer woodland" | CFwoodSp == "Prefer woodland" ~ "Prefer woodland",
+                     BFwoodSp == "Avoid woodland"  | CFwoodSp == "Avoid woodland"  ~ "Avoid woodland",
+                     TRUE ~ "Generalist"))
+
+# Create discrete woodland association categories for connectivity
+meta_df <- mutate( meta_df,
+                   connectivity_sig = case_when(
+                     X0.025quant_connectivity > 0 & X0.975quant_connectivity > 0 ~ "Pos",
+                     X0.025quant_connectivity < 0 & X0.975quant_connectivity < 0 ~ "Neg",
+                     TRUE ~ "NS"))
+
 # SAVE DATA FRAME -----------------------------------------------
 
-save(allSpEff_df,
+save(meta_df,
      file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 
 # CREATE DISTRIBUTION SPATRASTS ----------------------------------

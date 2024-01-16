@@ -19,14 +19,21 @@ library(corrplot)
 
 # DATA FILES ------------------------------------------
 
-load(file = "../Data/Spatial_data/DataForInlabru.RData")
-
 # SET PARAMETERS ------------------------------------
 
 # List all covariate spatial grid data frames
-cov_SGDF <- c(coverBF_SGDF, coverCF_SGDF, connW_SGDF,
-              coverBF_connW_SGDF, coverCF_connW_SGDF,
-              GDD5_SGDF_grp, WMIN_SGDF_grp, tasCV_SGDF_grp, soilM_SGDF_grp, RAIN_SGDF_grp)
+# SpatRasters
+for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
+                     pattern =  "\\.tif$")) {
+  
+  assign(gsub(".tif", "", i),
+         rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+                     i)))
+}
+
+cov_R <- list(coverBF_scaled, coverCF_scaled, connW_scaled,
+              coverBF_connW, coverCF_connW,
+              GDD5_grp, WMIN_grp, tasCV_grp, soilM_grp, RAIN_grp)
 
 covNames <- c("Broadleaf Cover", "Coniferous Cover", "Connectivity",
                "Broadleaf-Connectivity interaction",
@@ -35,8 +42,8 @@ covNames <- c("Broadleaf Cover", "Coniferous Cover", "Connectivity",
 
 # PROCESS DATA --------------------------------------
 
-cov_R_1990 <- lapply(cov_SGDF, function(x) { rast(x[1]) }) %>% rast(.)
-cov_R_2015 <- lapply(cov_SGDF, function(x) { rast(x[2]) }) %>% rast(.)
+cov_R_1990 <- lapply(cov_R, function(x) { x[[1]] }) %>% rast(.)
+cov_R_2015 <- lapply(cov_R, function(x) { x[[2]] }) %>% rast(.)
 
 names(cov_R_1990) <- names(cov_R_2015) <- covNames
 
