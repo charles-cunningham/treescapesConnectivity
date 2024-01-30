@@ -13,16 +13,6 @@
 # Copyright (C) 2022 The R Foundation for Statistical Computing
 # Platform: x86_64-pc-linux-gnu (64-bit)
 
-
-# TODO DECISIONS----------------------------------------
-
-# - Mesh size
-# - Connectivity parameterisation: radius, resistance
-# - How to filter woodland species
-# - time periods (single time period)
-# - visit length and week of year interacting?
-# - 1d inla mesh instead of rw2?
-
 # # INSTALL PACKAGES -----------------------------------
 # #Run this code once
 # 
@@ -331,17 +321,17 @@ unique(taxaData$taxon) %>%
 
 ### N.B. Total taxon to model within different groups: --------
 # Butterflies = 64
-# Moths = 864
-# Bryophytes = 969
-# Carabids = 371 
+# Bryophytes = 969 #
 # Caddisflies = 186
+# Carabids = 371 
 # Centipedes = 45
 # Ephemeroptera = 54
 # Gelechiidae = 151
 # Hoverflies = 262
 # Ladybirds = 53
-# Lichen = 2047
+# Lichen = 2047 #
 # Molluscs = 280
+# Moths = 864
 # Odonata = 51
 # Orthoptera = 65
 # Shieldbugs = 75
@@ -454,11 +444,12 @@ visitDataSpatial <- mask(visitDataSpatial, smoothUK)
 # CREATE WEEK COVARIATE
 
 ### Add week of year column ( will be included in model as covariate)
-# N.B. Week of the year as decimal number (00--53) using Monday as 
-# the first day of week (and typically with the first Monday 
-# of the year as day 1 of week 1). The UK convention.
+# N.B. Week of the year as decimal number (01--53) as defined in ISO 8601.
+# If the week (starting on Monday) containing 1 January has four or more 
+# days in the new year, then it is considered week 1. Otherwise, 
+# it is the last week of the previous year, and the next week is week 1.
 visitDataSpatial$week <- visitDataSpatial$date %>%
-  strftime(., format = "%W") %>%
+  strftime(., format = "%V") %>%
   as.numeric(.)
 
 # CREATE EFFORT COVARIATE
@@ -879,7 +870,7 @@ covplot <- plot(spde.posterior(model, "spaceTime", what = "matern.covariance")) 
 
 ### Plot median
 
-# Convert to medians to spatRast for saving/plotting
+# Convert prediction median to spatRast for saving/plotting
 median_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "median"],
                            template = template_R,
                            options = c("a_nodata = NA")),
@@ -909,8 +900,8 @@ predMedian <- ggplot(data = median_df) +
                          limits = c(0,1),
                          guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
@@ -919,7 +910,7 @@ predMedian <- ggplot(data = median_df) +
 
 ### Plot posterior sd
 
-# Convert to medians to spatRast for saving/plotting
+# Convert prediction sd to spatRast for saving/plotting
 sd_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "sd"],
                        template = template_R,
                        options = c("a_nodata = NA")),
@@ -945,8 +936,8 @@ predSD <- ggplot(data = sd_df) +
                          direction = 1,
                          guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
@@ -991,8 +982,8 @@ spaceTimePlot <- ggplot(data = spaceTime_df) +
                          guide = "none",
                          limits = c(-1,1) * max(abs(spaceTime_df$median))) +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +

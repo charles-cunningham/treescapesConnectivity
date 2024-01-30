@@ -17,10 +17,16 @@
 library(tidyverse)
 library(terra)
 
-# LOAD SPATIAL DATA
+# LOAD SPATIAL DATA -------------------------------------
 
-# Load cover and connectivity used in modelling
-load("../Data/Spatial_data/DataForInlabru.RData")
+# SpatRasters
+for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
+                     pattern =  "\\.tif$")) {
+  
+  assign(gsub(".tif", "", i),
+         rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+                     i))) 
+}
 
 # Boundaries
 UK <- vect("../Data/Spatial_data/Boundaries_and_CRS/UK/GBR.shp")
@@ -37,30 +43,51 @@ download.file(url = "https://epsg.io/27700.wkt2?download=1",
 bng <- sf::st_crs("../Data/Spatial_data/Boundaries_and_CRS/bng.prj")$wkt
 
 # Convert SGDFs used in model to SpatRasts, and project back to bng in m (not km)
-coverBF <- rast(coverBF_SGDF)%>% project(.,bng)
-coverCF <- rast(coverCF_SGDF)%>% project(.,bng)
-connW <- rast(connW_SGDF) %>% project(.,bng)
+coverBF <- project(coverBF, bng)
+coverCF <- project(coverCF, bng)
+connW <- project(connW, bng)
 
 # Standardise names
 names(coverBF) <- names(coverCF) <- names(connW) <- c("year1990", "year2015")
 
-# Unscale
-coverBF <-
-  (coverBF * scalingParams[scalingParams$variable == "coverBF", "variableSD"]) +
-  scalingParams[scalingParams$variable == "coverBF", "variableMean"]
-coverCF <-
-  (coverCF * scalingParams[scalingParams$variable == "coverCF", "variableSD"]) +
-  scalingParams[scalingParams$variable == "coverCF", "variableMean"]
-connW <-
-  (connW * scalingParams[scalingParams$variable == "connW", "variableSD"]) +
-  scalingParams[scalingParams$variable == "connW", "variableMean"]
+# PLOT CORELLATION ------------------------------------
 
-# Calculate change from 1990 to 2015
-coverBF[["change"]] <-  coverBF[["year2015"]] - coverBF[["year1990"]] 
-coverCF[["change"]] <-  coverCF[["year2015"]] - coverCF[["year1990"]] 
-connW[["change"]]  <-  connW[["year2015"]] - connW[["year1990"]] 
+### PROCESS SPATRASTERS
 
-# Create aggregated rasters
+# Create vectors of all 1x1km cells (remove NA) for cover and connectivity
+coverBF_vector <- values(coverBF, na.rm = TRUE ) %>%
+  as.vector
+connW_vector <- values(connW, na.rm = TRUE ) %>%
+  as.vector
+# All woodland or broadleaf woodland
+connW_df <- connW %>%
+  as.data.frame(.) %>%
+  gather("Year", "Connectivity")
+coverW_df <- (coverBF + coverCF) %>%
+  as.data.frame(.) %>%
+  gather("Year", "Cover")
+
+# Plot
+ggplot(data.frame(coverBF_vector, connW_vector),
+       aes(x = coverBF_vector ,
+           y = connW_vector)) +
+  geom_point(color = "blue", size = 1) +
+  labs(title = "Scatter Plot Example",
+       x = "X-axis",
+       y = "Y-axis")
+
+# Save to .png file
+ggsave(filename = paste0("../Writing/Plots/",
+                         "Cover_connectivity_corellation.png"),
+       allChange,
+       dpi = 600,
+       units = "px", width = 6000, height = 3600)
+
+
+
+# PLOT CHANGE ---------------------------------------
+
+### PROCESS SPATRASTERS
 
 # Aggregate to 10km for plot (mean)
 coverBF_10k <- terra::aggregate(coverBF,
@@ -70,12 +97,15 @@ coverCF_10k <- terra::aggregate(coverCF,
                                 fact = 10,
                                 sum, na.rm = TRUE) / 10^2
 connW_10k <- terra::aggregate(connW,
-                                fact = 10,
-                                sum, na.rm = TRUE) / 10^2
+                              fact = 10,
+                              sum, na.rm = TRUE) / 10^2
 
-### testing
+# Calculate change from 1990 to 2015
+coverBF_10k[["change"]] <-  coverBF_10k[["year2015"]] - coverBF_10k[["year1990"]] 
+coverCF_10k[["change"]] <-  coverCF_10k[["year2015"]] - coverCF_10k[["year1990"]] 
+connW_10k[["change"]]  <-  connW_10k[["year2015"]] - connW_10k[["year1990"]] 
 
-# PLOT CHANGE ---------------------------------------
+# CREATE INDIVIDUAL PLOTS
 
 # Shared theme
 changeTheme <- theme(
@@ -226,14 +256,15 @@ connChangeMap <- ggplot(data = as.data.frame(connW_10k, xy = TRUE),
   theme_void() +
   changeTheme
 
+### COLLATE PLOTS AND SAVE
+
 # Group into single grob
 allChange <- gridExtra::arrangeGrob( BFchangeMap, CFchangeMap, connChangeMap,
                        nrow = 1, ncol = 3)
 
 # Save to .png file
-ggsave(filename = paste0("../Writing/Plots/", "Cover_connectivity_change.png"),
+ggsave(filename = paste0("../Writing/Plots/",
+                         "Cover_connectivity_change.png"),
        allChange,
        dpi = 600,
        units = "px", width = 6000, height = 3600)
-
-

@@ -13,16 +13,6 @@
 # Copyright (C) 2022 The R Foundation for Statistical Computing
 # Platform: x86_64-pc-linux-gnu (64-bit)
 
-
-# TODO DECISIONS----------------------------------------
-
-# - Mesh size
-# - Connectivity parameterisation: radius, resistance
-# - How to filter woodland species
-# - time periods (single time period)
-# - visit length and week of year interacting?
-# - 1d inla mesh instead of rw2?
-
 # # INSTALL PACKAGES -----------------------------------
 # #Run this code once
 # 
@@ -453,11 +443,12 @@ visitDataSpatial <- mask(visitDataSpatial, smoothUK)
 # CREATE WEEK COVARIATE
 
 ### Add week of year column ( will be included in model as covariate)
-# N.B. Week of the year as decimal number (00--53) using Monday as 
-# the first day of week (and typically with the first Monday 
-# of the year as day 1 of week 1). The UK convention.
+# N.B. Week of the year as decimal number (01--53) as defined in ISO 8601.
+# If the week (starting on Monday) containing 1 January has four or more 
+# days in the new year, then it is considered week 1. Otherwise, 
+# it is the last week of the previous year, and the next week is week 1.
 visitDataSpatial$week <- visitDataSpatial$date %>%
-  strftime(., format = "%W") %>%
+  strftime(., format = "%V") %>%
   as.numeric(.)
 
 # CREATE EFFORT COVARIATE
@@ -550,21 +541,24 @@ mySpace <- inla.spde2.pcmatern(
   prior.range = c(1 * maxEdge, 0.5),
   prior.sigma = c(1, 0.5))
 
-# Priors for fixed and random effects
+# Priors for fixed effects
 fixedHyper <- list( mean = 0,
                     prec = 1 ) # Precision for all fixed effects except intercept
+
+# Priors for random effects
 randomHyper <- list(theta = list(prior="pc.prec",
-                                 param=c(0.5, 0.01)))
+                               param=c(0.5, 0.01)))
 ar1Hyper <- list(rho = list(prior="pc.prec",
                             param=c(0.5, 0.01)))
 
 # Set components
 inlabruCmp  <-  presence ~ 0 + Intercept(1) +
-  soilM(main = soilM_grp,
-        main_layer = iYear,
-        model = "rw2",
-        scale.model = TRUE,
-        hyper = randomHyper) +
+  
+  GDD5(main = GDD5_grp,
+       main_layer = iYear,
+       model = "rw2",
+       scale.model = TRUE,
+       hyper = randomHyper) +
   WMIN(main = WMIN_grp,
        main_layer = iYear,
        model = "rw2",
@@ -575,16 +569,16 @@ inlabruCmp  <-  presence ~ 0 + Intercept(1) +
         model = "rw2",
         scale.model = TRUE,
         hyper = randomHyper) +
-  GDD5(main = GDD5_grp,
-       main_layer = iYear,
-       model = "rw2",
-       scale.model = TRUE,
-       hyper = randomHyper) +
   RAIN(main = RAIN_grp,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
+  soilM(main = soilM_grp,
+        main_layer = iYear,
+        model = "rw2",
+        scale.model = TRUE,
+        hyper = randomHyper) +
   coverBF(main = coverBF_scaled,
           main_layer = iYear,
           model = "linear") +
@@ -886,8 +880,8 @@ predMedian <- ggplot(data = median_df) +
                          limits = c(0,1),
                          guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
@@ -922,8 +916,8 @@ predSD <- ggplot(data = sd_df) +
                          direction = 1,
                          guide = "none") +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +
@@ -968,8 +962,8 @@ spaceTimePlot <- ggplot(data = spaceTime_df) +
                          guide = "none",
                          limits = c(-1,1) * max(abs(spaceTime_df$median))) +
   facet_wrap(~ iYear, labeller = as_labeller(timeLabels)) +
-  # geom_text(data = timeLabels,
-  #           mapping = aes(x = 500, y = 925, label = label)) +
+  geom_text(data = timeLabels,
+            mapping = aes(x = 500, y = 925, label = label)) +
   theme_void() + 
   theme(plot.title = element_text(hjust = 0.5, vjust = -1),
         strip.text.x = element_blank()) +

@@ -182,64 +182,64 @@ meta_df <- mutate( meta_df,
 save(meta_df,
      file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 
-# CREATE DISTRIBUTION SPATRASTS ----------------------------------
-
-### Download BNG WKT string
-download.file(url = "https://epsg.io/27700.wkt2?download=1",
-              destfile = "../Data/Spatial_data/Boundaries_and_CRS/bng.prj")
-bng <- sf::st_crs("../Data/Spatial_data/Boundaries_and_CRS/bng.prj")$wkt
-
-# Get unique species to loop through
-speciesAll <- unique(allSpEff_df$species)
-
-# Create progress bar
-progressBar = txtProgressBar( min = 0,
-                              max = length(speciesAll),
-                              initial = 0,
-                              style = 3)
-
-# Loop through species (i needs to be numeric for the progress bar)
-for (i in 1:length(speciesAll)) {
-
-  # Get species
-  iSpecies <- speciesAll[i]
-  
-  # Get taxa for species i
-  iTaxa <- allSpEff_df %>% 
-    filter(species == iSpecies) %>%
-    distinct(taxa) %>%
-    as.character
-  
-  # Load in model predictions
-  load(paste0("../Data/Species_data/SDMs/",
-              iTaxa,
-              "/",
-              iSpecies ,
-              "/modelPred.RData"))
-  
-  # Convert prediction to spatRast (use median occupancy)
-  # (only second period for posterior occupancy plots)
-  occPlot <- rast(modelPred[modelPred$iYear == 2, "median"])
-  
-  # Convert projection back from km to m
-  occPlot <- project(occPlot, bng)
-  
-  # Save occupancy plot
-  writeRaster(occPlot,
-              paste0("../Data/Species_data/SDMs/",
-                     iTaxa,
-                     "/",
-                     iSpecies,
-                     "/occPlot.tif"),
-              overwrite = TRUE) 
-  
-  # Garbage clean
-  gc()
-  
-  # Iterate progress bar
-  setTxtProgressBar(progressBar, i)
-  
-}
-
-# Close progress bar
-close(progressBar)
+# # CREATE DISTRIBUTION SPATRASTS ----------------------------------
+# 
+# ### Download BNG WKT string
+# download.file(url = "https://epsg.io/27700.wkt2?download=1",
+#               destfile = "../Data/Spatial_data/Boundaries_and_CRS/bng.prj")
+# bng <- sf::st_crs("../Data/Spatial_data/Boundaries_and_CRS/bng.prj")$wkt
+# 
+# # Get unique species to loop through
+# speciesAll <- unique(allSpEff_df$species)
+# 
+# # Create progress bar
+# progressBar = txtProgressBar( min = 0,
+#                               max = length(speciesAll),
+#                               initial = 0,
+#                               style = 3)
+# 
+# # Loop through species (i needs to be numeric for the progress bar)
+# for (i in 1:length(speciesAll)) {
+# 
+#   # Get species
+#   iSpecies <- speciesAll[i]
+#   
+#   # Get taxa for species i
+#   iTaxa <- allSpEff_df %>% 
+#     filter(species == iSpecies) %>%
+#     distinct(taxa) %>%
+#     as.character
+#   
+#   # Load in model predictions
+#   load(paste0("../Data/Species_data/SDMs/",
+#               iTaxa,
+#               "/",
+#               iSpecies ,
+#               "/modelPred.RData"))
+#   
+#   # Convert prediction to spatRast (use median occupancy)
+#   # (only second period for posterior occupancy plots)
+#   occPlot <- rast(modelPred[modelPred$iYear == 2, "median"])
+#   
+#   # Convert projection back from km to m
+#   occPlot <- project(occPlot, bng)
+#   
+#   # Save occupancy plot
+#   writeRaster(occPlot,
+#               paste0("../Data/Species_data/SDMs/",
+#                      iTaxa,
+#                      "/",
+#                      iSpecies,
+#                      "/occPlot.tif"),
+#               overwrite = TRUE) 
+#   
+#   # Garbage clean
+#   gc()
+#   
+#   # Iterate progress bar
+#   setTxtProgressBar(progressBar, i)
+#   
+# }
+# 
+# # Close progress bar
+# close(progressBar)

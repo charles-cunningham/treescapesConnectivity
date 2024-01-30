@@ -13,9 +13,12 @@
 # Copyright (C) 2023 The R Foundation for Statistical Computing
 # Platform: x86_64-w64-mingw32/x64 (64-bit)
 
-# TODO ----------------------------------------
+# TODO DECISIONS----------------------------------------
 
-# - Consider rw2 or inla.mesh.1d for climate covariates
+# - Mesh size
+# - Connectivity parameterisation: radius, resistance
+# - How to filter woodland species
+# - visit length and week of year interacting?
 
 # LOAD LIBRARIES & INSTALL PACKAGES -----------------
 
@@ -88,7 +91,7 @@ range2 = c(2015,2025)
 # Set batch number/species (arg[1]) and taxa group (arg[2]), specified array in job script
 #args <- commandArgs(trailingOnly = TRUE)
 batchN <- 11
-taxaGroup <- "Carabids"
+taxaGroup <- "Butterflies"
 
 # Estimated range of spatial effect in km (determines mesh)
 estimated_range <- 20 
@@ -137,7 +140,7 @@ unlink(tempFile)
 ### SPECIES DATA
 
 # Load in test data (butterflies for now)
-rawDataUK <- readRDS("../Data/Species_data/Raw_data/Carabids/Ground_Beetles_2022.rds")
+rawDataUK <- read.csv("../Data/Species_data/Raw_data/Butterflies/ccunningham_butterflies.csv")
 
 # FILTER AND STANDARDISE DATA FRAMES --------------------------
 
@@ -354,11 +357,12 @@ visitDataSpatial <- mask(visitDataSpatial, smoothUK)
 # CREATE WEEK COVARIATE
 
 ### Add week of year column ( will be included in model as covariate)
-# N.B. Week of the year as decimal number (00--53) using Monday as 
-# the first day of week (and typically with the first Monday 
-# of the year as day 1 of week 1). The UK convention.
+# N.B. Week of the year as decimal number (01--53) as defined in ISO 8601.
+# If the week (starting on Monday) containing 1 January has four or more 
+# days in the new year, then it is considered week 1. Otherwise, 
+# it is the last week of the previous year, and the next week is week 1.
 visitDataSpatial$week <- visitDataSpatial$date %>%
-  strftime(., format = "%W") %>%
+  strftime(., format = "%V") %>%
   as.numeric(.)
 
 # CREATE EFFORT COVARIATE
@@ -379,7 +383,7 @@ visitDataSpatial <- visitDataSpatial %>%
 covarValues <- dplyr::select(as.data.frame(visitDataSpatial), iYear, presence, week)
 
 # Loop through spatial (random) variables
-for (i in c( "GDD5_scaled", "WMIN_scaled", "tasCV_scaled", "RAIN_scaled", "soilM_scaled",
+for (i in c( "GDD5_grp", "WMIN_grp", "tasCV_grp", "RAIN_grp", "soilM_grp",
              "coverBF_scaled", "coverCF_scaled", "connW_scaled")) {
 
   # Get covariate i spatRaster (each layer is for time period iYear)
@@ -472,25 +476,51 @@ fixedHyper <- list( mean = 0,
 randomHyper <- list(theta = list(prior="pc.prec",
                                  param=c(0.5, 0.01)))
 ar1Hyper <- list(rho = list(prior="pc.prec",
-                            param=c(0.5, 0.01)))
+                            param=c(0.5, 0.1)))
+
+# y_like <- logit(dat$y/dat$n)
+# sdres <- sd(y_like[is.finite(y_like)])
+# pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres, 0.01)))
+
 
 # Set components
 inlabruCmp  <-  presence ~ 0 + Intercept(1) +
-  GDD5(main = GDD5_scaled,
+  
+  GDD5(main = GDD5_grp,
+       main_layer = iYear,
+       model = "rw2",
+       scale.model = TRUE,
+       hyper = list(theta = list(prior="pc.prec",
+                                 param=c(sd(covarValues$GDD5) * 3,
+                                         0.1)))) +
+  WMIN(main = WMIN_grp,
+       main_layer = iYear,
+       model = "rw2",
+       scale.model = TRUE,
+       hyper = list(theta = list(prior="pc.prec",
+                                 param=c(sd(covarValues$WMIN) * 3,
+                                         0.1)))) +
+  tasCV(main = tasCV_grp,
         main_layer = iYear,
-        model = GDD5_matern1D) +
-  WMIN(main = WMIN_scaled,
+        model = "rw2",
+        scale.model = TRUE,
+        hyper = list(theta = list(prior="pc.prec",
+                                  param=c(sd(covarValues$tasCV) * 3,
+                                          0.1)))) +
+  RAIN(main = RAIN_grp,
        main_layer = iYear,
-       model = WMIN_matern1D) +
-  tasCV(main = tasCV_scaled,
-       main_layer = iYear,
-       model = tasCV_matern1D) +
-  RAIN(main = RAIN_scaled,
-       main_layer = iYear,
-       model = RAIN_matern1D) +
-  soilM(main = soilM_scaled,
-       main_layer = iYear,
-       model = soilM_matern1D) +
+       model = "rw2",
+       scale.model = TRUE,
+       hyper = list(theta = list(prior="pc.prec",
+                                 param=c(sd(covarValues$RAIN) * 3,
+                                         0.1)))) +
+  soilM(main = soilM_grp,
+        main_layer = iYear,
+        model = "rw2",
+        scale.model = TRUE,
+        hyper = list(theta = list(prior="pc.prec",
+                                  param=c(sd(covarValues$soilM) * 3,
+                                          0.1)))) +
   coverBF(main = coverBF_scaled,
           main_layer = iYear,
           model = "linear") +
@@ -513,7 +543,9 @@ inlabruCmp  <-  presence ~ 0 + Intercept(1) +
   week(main = week,
        model = "rw2",
        cyclic = TRUE,
-       hyper = randomHyper) +
+       hyper = list(theta = list(prior="pc.prec",
+                                 param=c(sd(covarValues$week) * 3,
+                                         0.1)))) +
   spaceTime(main = geometry,
             group = iYear,
             ngroup = nYear,
@@ -608,27 +640,27 @@ randomEff_df["spaceTime"] <- NULL
 # Add name of random effect to each dataframe in list
 randomEff_df <- imap(randomEff_df, ~mutate(.x, randomEff = .y))
 
-# Get covariate bin values for random effect IDs
-randomEff_df <- lapply(names(randomEff_df), function(x) {
-  
-  if (x != "week") {
-    
-    randomEff_df[[x]] <-  randomEff_df[[x]] %>%
-      mutate(loc = get(paste0(x, "_matern1D"))$mesh$loc)
-    
-  } else  {
-    
-    randomEff_df[[x]] <-  randomEff_df[[x]] %>%
-      mutate(loc = ID)
-  }
-})
+# # Get covariate bin values for random effect IDs
+# randomEff_df <- lapply(names(randomEff_df), function(x) {
+#   
+#   if (x != "week") {
+#     
+#     randomEff_df[[x]] <-  randomEff_df[[x]] %>%
+#       mutate(loc = get(paste0(x, "_matern1D"))$mesh$loc)
+#     
+#   } else  {
+#     
+#     randomEff_df[[x]] <-  randomEff_df[[x]] %>%
+#       mutate(loc = ID)
+#   }
+# })
 
 # Unlist, then rename and select quantile columns
 randomEff_df <- do.call(rbind, randomEff_df)%>%
   rename("q0.025" = "0.025quant",
          "q0.5" = "0.5quant",
          "q0.975" = "0.975quant") %>%
-  dplyr::select(ID, q0.025, q0.5, q0.975, randomEff, loc)
+  dplyr::select(ID, q0.025, q0.5, q0.975, randomEff)
 
 ### Back scale non-spatial random covariate values
 
@@ -651,7 +683,7 @@ randomEff_df$unscaledID <- sapply(1:NROW(randomEff_df), function(x) {
                     "variableSD"]
     
     # Unscale using xSCALED = (x - xbar)/sd --> x = (xSCALED * sd) + xbar principle
-    unscaledID <- (randomEff_df$loc[x] * randomEffSD) + randomEffMean
+    unscaledID <- (randomEff_df$ID[x] * randomEffSD) + randomEffMean
     
     return(unscaledID) # Return unscaled value
     
