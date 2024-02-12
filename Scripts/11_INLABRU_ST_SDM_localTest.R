@@ -36,9 +36,6 @@
 # # Install inlabru
 # install.packages("inlabru")
 #
-# # Need terra >1.7.60 to work as fixed extract issue (issue 1332) (not on CRAN at time of writing)
-# install.packages("terra", repos = "https://rspatial.r-universe.dev")
-#
 # # Install BRCmap (more complex to install as NAMESPACE issue - 
 # rgdal and rgeos included but not on CRAN)
 # Work around (hopefully this will be fixed soon): Download locally, extract from .zip, 
@@ -62,10 +59,6 @@ library(BRCmap)
 library(ggplot2)
 library(grid)
 library(gridExtra)
-
-# When running on cluster implement PARDISO
-# inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
-# inla.pardiso.check()
 
 # SOURCE FUNCTIONS ----------------------------
 
@@ -91,7 +84,7 @@ range2 = c(2015,2025)
 # Set batch number/species (arg[1]) and taxa group (arg[2]), specified array in job script
 #args <- commandArgs(trailingOnly = TRUE)
 batchN <- 11
-taxaGroup <- "Butterflies"
+taxaGroup <- "Caddisflies"
 
 # Estimated range of spatial effect in km (determines mesh)
 estimated_range <- 20 
@@ -140,7 +133,7 @@ unlink(tempFile)
 ### SPECIES DATA
 
 # Load in test data (butterflies for now)
-rawDataUK <- read.csv("../Data/Species_data/Raw_data/Butterflies/ccunningham_butterflies.csv")
+rawDataUK <- readRDS("../Data/Species_data/Raw_data/Caddisflies/Caddisflies_2022_Connected Treescapes.rds")
 
 # FILTER AND STANDARDISE DATA FRAMES --------------------------
 
@@ -428,13 +421,17 @@ maxEdge <- estimated_range/5
 recordCoords <- crds(visitDataSpatial) %>% 
   unique(.)
 
+
 # Create mesh
-mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK),
+mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK) %>% as("Spatial"),
                      loc = recordCoords,
                      max.edge = c(1,5) * maxEdge,
                      offset = c(1,2) * maxEdge, 
-                     cutoff = maxEdge/5,
+                     cutoff = maxEdge/2,
+                     #min.angle = 26,
                      crs = gsub( "units=m", "units=km", st_crs(bng)$proj4string ))
+
+plot(mesh)
 
 # Create covariate 1D meshes
 GDD5_matern1D <- createMesh1D(GDD5_scaled, 50) %>%
@@ -467,8 +464,8 @@ nYear <- length(unique(iYear))
 # Define spatial SPDE priors
 mySpace <- inla.spde2.pcmatern(
   mesh,
-  prior.range = c(1 * maxEdge, 0.5),
-  prior.sigma = c(1, 0.5))
+  prior.range = c(1 * maxEdge, 0.01),
+  prior.sigma = c(1, 0.01))
 
 # Priors for fixed and random effects
 fixedHyper <- list( mean = 0,
@@ -476,51 +473,36 @@ fixedHyper <- list( mean = 0,
 randomHyper <- list(theta = list(prior="pc.prec",
                                  param=c(0.5, 0.01)))
 ar1Hyper <- list(rho = list(prior="pc.prec",
-                            param=c(0.5, 0.1)))
-
-# y_like <- logit(dat$y/dat$n)
-# sdres <- sd(y_like[is.finite(y_like)])
-# pcprior <- list(prec = list(prior="pc.prec", param = c(3*sdres, 0.01)))
-
+                            param=c(0.5, 0.01)))
 
 # Set components
-inlabruCmp  <-  presence ~ 0 + Intercept(1) +
+inlabruCmp  <-  geometry + iYear +week~ 0 + Intercept(1) +# presence ~ 0 + Intercept(1) +
   
   GDD5(main = GDD5_grp,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
-       hyper = list(theta = list(prior="pc.prec",
-                                 param=c(sd(covarValues$GDD5) * 3,
-                                         0.1)))) +
+       hyper = randomHyper) +
   WMIN(main = WMIN_grp,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
-       hyper = list(theta = list(prior="pc.prec",
-                                 param=c(sd(covarValues$WMIN) * 3,
-                                         0.1)))) +
+       hyper = randomHyper) +
   tasCV(main = tasCV_grp,
         main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
-        hyper = list(theta = list(prior="pc.prec",
-                                  param=c(sd(covarValues$tasCV) * 3,
-                                          0.1)))) +
+        hyper = randomHyper) +
   RAIN(main = RAIN_grp,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
-       hyper = list(theta = list(prior="pc.prec",
-                                 param=c(sd(covarValues$RAIN) * 3,
-                                         0.1)))) +
+       hyper = randomHyper) +
   soilM(main = soilM_grp,
         main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
-        hyper = list(theta = list(prior="pc.prec",
-                                  param=c(sd(covarValues$soilM) * 3,
-                                          0.1)))) +
+        hyper = randomHyper) +
   coverBF(main = coverBF_scaled,
           main_layer = iYear,
           model = "linear") +
@@ -535,29 +517,30 @@ inlabruCmp  <-  presence ~ 0 + Intercept(1) +
             model = "linear") +
   CFconnINT(main = coverCF_connW,
             main_layer = iYear,
-            model = "linear") +
-  visitLengthShort(main = visitLengthShort,
-                   model = "linear") +
-  visitLengthSingle(main = visitLengthSingle,
-                    model = "linear") +
-  week(main = week,
-       model = "rw2",
-       cyclic = TRUE,
-       hyper = list(theta = list(prior="pc.prec",
-                                 param=c(sd(covarValues$week) * 3,
-                                         0.1)))) +
-  spaceTime(main = geometry,
+           model = "linear") +
+  # visitLengthShort(main = visitLengthShort,
+  #                  model = "linear") +
+  # visitLengthSingle(main = visitLengthSingle,
+  #                   model = "linear") +
+  # week(main = week,
+  #      model = "rw2",
+  #      cyclic = TRUE,
+  #      hyper = randomHyper) +
+  spaceTime(geometry,
             group = iYear,
             ngroup = nYear,
             model = mySpace,
             control.group = list(model = "ar1",
                                  hyper = ar1Hyper))
 
+
 # Fit model
-model <- bru(components = inlabruCmp,
-             family = "binomial",
-             control.family = list(link = "cloglog"),
-             data = st_as_sf(visitDataSpatial),
+model <- lgcp(components = inlabruCmp, #bru(components = inlabruCmp,
+              domain = list(geometry = mesh, iYear = seq_len(2)),
+              samplers = st_as_sf(visitDataSpatial), 
+             #family = "binomial",
+             #control.family = list(link = "cloglog"),
+             data = st_as_sf(visitDataSpatial[visitDataSpatial$presence == 1, ]),
              options=list(control.fixed = fixedHyper,
                           control.inla= list(int.strategy='eb'),
                           control.compute = list(waic = TRUE, dic = FALSE, cpo = TRUE),
@@ -595,7 +578,7 @@ modelPred <- predict(model,
                                                              BFconnINT +
                                                              CFconnINT +
                                                              # Max value for week to predict over (removed later)
-                                                             max(model$summary.random$week$mean) + 
+                                                            # max(model$summary.random$week$mean) + 
                                                              Intercept ))),
                      exclude = c("week")) 
 

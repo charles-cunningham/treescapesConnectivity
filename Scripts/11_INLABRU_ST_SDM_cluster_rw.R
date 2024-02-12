@@ -9,8 +9,8 @@
 # SDM using inlabru. This version fits a spatio-temporal model with relative
 # occurrence probability as the response using a visits data structure.
 #
-# R version 4.2.1 (2022-06-23) -- "Funny-Looking Kid"
-# Copyright (C) 2022 The R Foundation for Statistical Computing
+# R version 4.3.2 (2023-10-31) -- "Eye Holes"
+# Copyright (C) 2023 The R Foundation for Statistical Computing
 # Platform: x86_64-pc-linux-gnu (64-bit)
 
 # # INSTALL PACKAGES -----------------------------------
@@ -24,15 +24,13 @@
 # 
 # # Install inlabru
 # install.packages("inlabru")
-# 
-# # Need terra >1.7.60 to work as fixed extract issue (issue 1332) (not on CRAN at time of writing)
-# install.packages("terra", repos = "https://rspatial.r-universe.dev")
 #
 # # Install BRCmap (more complex to install as NAMESPACE issue - 
 # rgdal and rgeos included but not on CRAN)
 # Work around (hopefully this will be fixed soon): Download locally, extract from .zip, 
 # remove rgdal and rgeos from NAMESPACE file, re -zip, then run code below -
-# devtools::install_local("R:/rsrch/cb751/lab/Charles/R/PackageLibrary/BRCmap-master.zip")
+# devtools::install_local("Packages/BRCmap-master.zip")
+# install.packages("maptools", repos = "https://packagemanager.posit.co/cran/2023-10-13")
 # 
 # # Needed to run on HPC
 # inla.binary.install()
@@ -84,10 +82,6 @@ estimated_range <- 50
 options(bitmapType='cairo')
 
 # SET UP INLA -----------------------------------------
-
-# When running on cluster implement PARDISO
-inla.setOption(pardiso.license = "Treescapes/pardiso.lic")
-inla.pardiso.check()
 
 # Set number of threads
 inla.setOption("num.threads" = numThreads)
@@ -522,11 +516,13 @@ maxEdge <- estimated_range/5
 recordCoords <- crds(visitDataSpatial) %>% 
   unique(.)
 
-mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK),
+# Create mesh (convert boundary to sp object as leads to best convergence)
+mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK) %>% as("Spatial"),
                      loc = recordCoords,
                      max.edge = c(1,5) * maxEdge,
                      offset = c(1,2) * maxEdge, 
-                     cutoff = maxEdge/5,
+                     cutoff = maxEdge/2,
+                     min.angle = 26,
                      crs = gsub( "units=m", "units=km", st_crs(bng)$proj4string ))
 
 # FIT SPATIO-TEMPORAL MODEL ---------------------------------
@@ -1194,69 +1190,3 @@ ggsave(paste0(iSpeciesDir,
        width = 6000, height = 3000,
        units = "px", dpi = 400,
        limitsize = FALSE)
-
-##########################################################################################
-
-# ### N.B. COVARIATE FUNCTIONS INFO
-# 
-# ## (i) X-Y (SPACE) COVARIATE FUNCTION
-# 
-# # Option 1: Function to map out single-layer spatial grid data frame (soilM_SGDF[1])
-# 
-# f.soilS <- function(x, y) {
-#   
-#   # turn coordinates into SpatialPoints object with the appropriate coordinate reference system (CRS)
-#   spp <- SpatialPoints(data.frame(x = x, y = y), proj4string = fm_sp_get_crs(soilM_SGDF[1]))
-#   
-#   # Extract values at spp coords
-#   v <- over(spp, soilM_SGDF[1])
-#   
-#   return(v[,1])
-# }
-# 
-# # And component detailed as:
-# 
-# ... + soil(f.soilS(x, y), model = "linear")
-# 
-# # Option 2:
-# 
-# # Enter directly as component using inbuilt spatial grid data frame recognition
-# 
-# ... + soil(soilM_SGDF[1], model = "linear")
-# 
-# ## (i) X-Y-TIME (SPACE-TIME) COVARIATE FUNCTION
-# 
-# # Option 1: Function to map out multi-layer spatial grid data frame (each layer is time step)(soilM_SGDF)
-# 
-# # This is tricky to construct, N.B. Finn Lindgren says
-# # "For inlabru to use the function properly, it needs to be vectorised, so that
-# # fun(x,y,year) allows x, y, and year to be vectors, and returns a vector v of elements v_i, where
-# # v_i = fun(x[i], y[i], year[i]) that is, one value for each row of data.frame(x, y, year)"
-# 
-# f.soilST <- function(x, y, iYear) {
-# 
-#   # turn coordinates into SpatialPoints object with the appropriate coordinate reference system (CRS)
-#   spp <- SpatialPointsDataFrame(coords = data.frame(x = x, y = y),
-#                                 data = data.frame(iYear = iYear),
-#                                 proj4string = fm_sp_get_crs(soilM_SGDF))
-# 
-#   # Extract values at spp coords, from our SpatialGridDataFrame
-#   v <- over(spp, soilM_SGDF)
-# 
-#   v$iYear <- iYear
-# 
-#   v$iYearCov <- apply(v, 1, FUN = function(z) { z[ z["iYear" ]] })
-# 
-#   return(v$iYearCov)
-# }
-
-# # And component detailed as:
-# 
-# ... + soilST(main = f.soilST(x, y, iYear), model = "linear")
-# 
-# # Option 2:
-# 
-# # Enter directly as component using inbuilt spatial grid data frame recognition
-# 
-# ... + soilST(main = soilM_SGDF, main_layer = iYear, model = "linear")
-

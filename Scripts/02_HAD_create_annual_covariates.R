@@ -14,9 +14,6 @@
 
 ### LOAD LIBRARIES & INSTALL PACKAGES ---------------------------------
 
-# Change  library to R: (not enough space on C:)
-.libPaths("R:/rsrch/cb751/lab/Charles/R/PackageLibrary")
-
 # Load packages
 library(terra)
 library(tidyverse)
