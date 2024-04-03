@@ -194,9 +194,14 @@ if (taxaGroup == "Ladybirds") {
 if (taxaGroup == "Lichen") {
   rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Lichen/Lichen_2022.rds") }
 
-# Molluscs
+# Molluscs (need to remove marine species)
 if (taxaGroup == "Molluscs") {
-  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Molluscs/Molluscs_2022_Connected Treescapes.rds") }
+  rawDataUK <- readRDS("Treescapes/ST_SDMs/Data/Raw_data/Molluscs/Molluscs_2022_Connected Treescapes.rds")
+  
+  # Filter marine species out of dataset
+  rawDataUK  <- rawDataUK %>%
+    filter(taxon_group_one != "marine molluscs"  | is.na(taxon_group_one)) %>%
+    filter(taxon_group_two != "marine molluscs"  | is.na(taxon_group_two)) }
 
 # Moths
 if (taxaGroup == "Moths") {
@@ -314,17 +319,17 @@ unique(taxaData$taxon) %>%
 
 ### N.B. Total taxon to model within different groups: --------
 # Butterflies = 64
-# Moths = 864
-# Bryophytes = 969
-# Carabids = 371 
+# Bryophytes = 969 #
 # Caddisflies = 186
+# Carabids = 371 
 # Centipedes = 45
 # Ephemeroptera = 54
 # Gelechiidae = 151
 # Hoverflies = 262
 # Ladybirds = 53
-# Lichen = 2047
-# Molluscs = 280
+# Lichen = 2047 #
+# Molluscs = 208
+# Moths = 864
 # Odonata = 51
 # Orthoptera = 65
 # Shieldbugs = 75

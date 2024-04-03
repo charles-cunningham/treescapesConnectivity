@@ -307,12 +307,8 @@ GDD5map <- ggplot(data = GDD5df, aes(x = x, y = y,
   
   # Land cover raster
   geom_tile() +
-  scale_colour_gradient2(midpoint = 1500,
-                         low = "#313695",
-                         mid = "#fee090",
-                         high = "#a50026",
-                         guide = NULL) +
   scale_fill_gradient2( "",
+                        aesthetics = c("fill", "colour"),
                         midpoint = 1500,
                         low = "#313695",
                         mid = "#fee090",
@@ -354,12 +350,8 @@ WMINmap <- ggplot(data = WMINdf, aes(x = x, y = y,
   
   # Land cover raster
   geom_tile() +
-  scale_colour_gradient2(midpoint = 0,
-                         low = "#313695",
-                         mid = "#fee090",
-                         high = "#a50026",
-                         guide = NULL) +
   scale_fill_gradient2( "",
+                        aesthetics = c("fill", "colour"),
                         midpoint = 0,
                         low = "#313695",
                         mid = "#fee090",
@@ -401,12 +393,8 @@ tasCVmap <- ggplot(data = tasCVdf, aes(x = x, y = y,
   
   # Land cover raster
   geom_tile() +
-  scale_colour_gradient2(midpoint = 0.016,
-                         low = "#313695",
-                         mid = "#fee090",
-                         high = "#a50026",
-                         guide = NULL) +
   scale_fill_gradient2( "",
+                        aesthetics = c("fill", "colour"),
                         midpoint = 0.016,
                         low = "#313695",
                         mid = "#fee090",
@@ -448,12 +436,9 @@ soilMmap <- ggplot(data = soilMdf[soilMdf$mean != 1,], aes(x = x, y = y,
   
   # Land cover raster excluding '1' values (lakes)
   geom_tile() +
-  scale_colour_gradient2(midpoint = 0.2,
-                         low = "#a50026",
-                         mid = "#fee090",
-                         high = "#313695",
-                         guide = NULL) +
-  scale_fill_gradient2(midpoint = 0.2,
+  scale_fill_gradient2("",
+                       aesthetics = c("fill", "colour"),
+                       midpoint = 0.2,
                        low = "#a50026",
                        mid = "#fee090",
                        high = "#313695",
@@ -499,13 +484,8 @@ RAINmap <- ggplot(data = RAINdf, aes(x = x, y = y,
   
   # Land cover raster
   geom_tile() +
-  scale_colour_gradient2( "",
-                        midpoint = 1500,
-                        low = "#a50026",
-                        mid = "#fee090",
-                        high = "#313695",
-                        guide = NULL) +
   scale_fill_gradient2( "",
+                        aesthetics = c("fill", "colour"),
                         midpoint = 1500,
                         low = "#a50026",
                         mid = "#fee090",

@@ -6,7 +6,7 @@
 # Script Name: Plot processed woodland cover and connectivity
 #
 # Script Description: Descriptive statistics and plots for cover 
-# and connecitivity change summary
+# and connectivity change summary
 
 # LOAD LIBRARIES & INSTALL PACKAGES -----------------
 
@@ -16,6 +16,8 @@
 # Load packages
 library(tidyverse)
 library(terra)
+library(sf)
+library(wesanderson)
 
 # LOAD SPATIAL DATA -------------------------------------
 
@@ -33,7 +35,9 @@ UK <- vect("../Data/Spatial_data/Boundaries_and_CRS/UK/GBR.shp")
 Ireland <- vect("../Data/Spatial_data/Boundaries_and_CRS/Ireland/IRL.shp")
 IsleOfMan <- vect("../Data/Spatial_data/Boundaries_and_CRS/IsleOfMan/IMN.shp")
 
-# CREATE STANDARDISED RASTERS --------------------------
+# PROCESS SPATIAL DATA --------------------------------
+
+### CREATE STANDARDISED RASTERS
 
 # Download BNG WKT string
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -42,7 +46,7 @@ download.file(url = "https://epsg.io/27700.wkt2?download=1",
 # Read in BNG CRS
 bng <- sf::st_crs("../Data/Spatial_data/Boundaries_and_CRS/bng.prj")$wkt
 
-# Convert SGDFs used in model to SpatRasts, and project back to bng in m (not km)
+# Project back to bng in m (not km)
 coverBF <- project(coverBF, bng)
 coverCF <- project(coverCF, bng)
 connW <- project(connW, bng)
@@ -50,44 +54,24 @@ connW <- project(connW, bng)
 # Standardise names
 names(coverBF) <- names(coverCF) <- names(connW) <- c("year1990", "year2015")
 
-# PLOT CORELLATION ------------------------------------
-
 ### PROCESS SPATRASTERS
 
-# Create vectors of all 1x1km cells (remove NA) for cover and connectivity
-coverBF_vector <- values(coverBF, na.rm = TRUE ) %>%
-  as.vector
-connW_vector <- values(connW, na.rm = TRUE ) %>%
-  as.vector
-# All woodland or broadleaf woodland
-connW_df <- connW %>%
-  as.data.frame(.) %>%
-  gather("Year", "Connectivity")
-coverW_df <- (coverBF + coverCF) %>%
-  as.data.frame(.) %>%
-  gather("Year", "Cover")
+# 1KM STATIC PLOTS
 
-# Plot
-ggplot(data.frame(coverBF_vector, connW_vector),
-       aes(x = coverBF_vector ,
-           y = connW_vector)) +
-  geom_point(color = "blue", size = 1) +
-  labs(title = "Scatter Plot Example",
-       x = "X-axis",
-       y = "Y-axis")
+# Calculate change from 1990 to 2015
+coverBF[["change"]] <-  coverBF[["year2015"]] - coverBF[["year1990"]] 
+coverCF[["change"]] <-  coverCF[["year2015"]] - coverCF[["year1990"]] 
+connW[["change"]]  <-  connW[["year2015"]] - connW[["year1990"]] 
 
-# Save to .png file
-ggsave(filename = paste0("../Writing/Plots/",
-                         "Cover_connectivity_corellation.png"),
-       allChange,
-       dpi = 600,
-       units = "px", width = 6000, height = 3600)
+# Format to data frames and add type columns
+coverBF_df <- as.data.frame(coverBF, xy = TRUE) %>% add_column(type = "Broadleaf")
+coverCF_df <- as.data.frame(coverCF, xy = TRUE) %>% add_column(type = "Coniferous")
+connW_df <- as.data.frame(connW, xy = TRUE) %>% add_column(type = "Connectivity")
 
+# Join 1990 and 2015 LCM data frames together
+plot_df <- rbind(coverBF_df, coverCF_df, connW_df)
 
-
-# PLOT CHANGE ---------------------------------------
-
-### PROCESS SPATRASTERS
+# 10KM CHANGE PLOTS
 
 # Aggregate to 10km for plot (mean)
 coverBF_10k <- terra::aggregate(coverBF,
@@ -100,31 +84,117 @@ connW_10k <- terra::aggregate(connW,
                               fact = 10,
                               sum, na.rm = TRUE) / 10^2
 
-# Calculate change from 1990 to 2015
-coverBF_10k[["change"]] <-  coverBF_10k[["year2015"]] - coverBF_10k[["year1990"]] 
-coverCF_10k[["change"]] <-  coverCF_10k[["year2015"]] - coverCF_10k[["year1990"]] 
-connW_10k[["change"]]  <-  connW_10k[["year2015"]] - connW_10k[["year1990"]] 
+# Format to data frames and add type columns
+coverBF_10k_df <- as.data.frame(coverBF_10k, xy = TRUE) %>% add_column(type = "Broadleaf")
+coverCF_10k_df <- as.data.frame(coverCF_10k, xy = TRUE) %>% add_column(type = "Coniferous")
+connW_10k_df <- as.data.frame(connW_10k, xy = TRUE) %>% add_column(type = "Connectivity")
 
-# CREATE INDIVIDUAL PLOTS
+# Join 1990 and 2015 LCM data frames together
+plot_10k_df <- rbind(coverBF_10k_df, coverCF_10k_df, connW_10k_df)
 
-# Shared theme
-changeTheme <- theme(
-  plot.background = element_rect(fill = "white",
-                                 colour = "white"),
-  legend.position = c(0.5, -0.04),
-  strip.text.x = element_text(size = 10, face = "bold"),
-  strip.text.y = element_text(size = 10, face = "bold"),
-  panel.spacing.x = unit(-3, "lines"),
-  panel.spacing.y = unit(-3, "lines"),
-  plot.margin = margin(0, -0.5, 2, -0.5, "lines" ))
+# PLOT CORRELATION ------------------------------------
 
-### Broadleaf
+# Create 2015 data frame from plot data frame
+corr_df <- pivot_wider( plot_df,
+                         id_cols = c(x, y),
+                         names_from = type,
+                         values_from = c(year2015, change)) %>%
+  # Create 2015 and change columns for total woodland
+  mutate(year2015_Woodland = year2015_Broadleaf + year2015_Coniferous) %>%
+  mutate(change_Woodland = change_Broadleaf + change_Coniferous)
+
+
+### PLOT 2015 VALUES
+
+# Create data frame
+covConnCorr <-  pivot_longer(corr_df, # Gather into long format
+                             cols = c(year2015_Woodland,
+                                      year2015_Coniferous,
+                                      year2015_Broadleaf)) %>%
+  
+  # Plot
+  ggplot(aes(x = value ,
+             y = year2015_Connectivity )) +
+  
+  # Add points
+  geom_point(size = 0.5, shape = 16, alpha = 0.3) +
+  
+  # Facet wrap and strip labels
+  facet_wrap( ~name ,
+              labeller = as_labeller(
+                c(year2015_Woodland = "All Woodland",
+                  year2015_Coniferous = "Coniferous",
+                  year2015_Broadleaf = "Broadleaf"))) +
+  
+  # Axis labels and theme adjustments
+  labs(x = "Proportion woodland cover in 2015",
+       y = "Connectivity (Amps)") + 
+  theme_minimal() +
+  theme(axis.title = element_text(size = 16), 
+        axis.text = element_text(size = 14),  
+        strip.text = element_text(size = 14)) 
+
+# Save to .png file
+ggsave(filename = paste0("../Writing/Plots/",
+                         "Cover_connectivity_corellation.png"),
+       covConnCorr,
+       dpi = 600,
+       units = "px", width = 8000, height = 3000)
+
+### PLOT CHANGE VALUES
+
+# Create data frame
+covConnChangeCorr <- 
+  pivot_longer(corr_df, # Gather into long format
+               cols = c(change_Woodland,
+                        change_Coniferous,
+                        change_Broadleaf )) %>%
+  # Plot
+  ggplot(aes(x = value,
+             y = change_Connectivity )) +
+  
+  # Add points
+  geom_point(size = 0.5, shape = 16, alpha = 0.3) +
+  
+  # Facet wrap and strip labels
+  facet_wrap( ~name ,
+              labeller = as_labeller(
+                c(change_Woodland = "All Woodland",
+                  change_Coniferous = "Coniferous",
+                  change_Broadleaf = "Broadleaf"))) +
+  
+  # Axis labels and theme
+  labs(x = "Absolute proportion woodland cover change",
+       y = "Change in connectivity (Amps)") + 
+  theme_minimal() +
+  theme(axis.title = element_text(size = 16), 
+        axis.text = element_text(size = 14),  
+        strip.text = element_text(size = 14)) 
+
+# Save to .png file
+ggsave(filename = paste0("../Writing/Plots/",
+                         "Cover_connectivity_change_corellation.png"),
+       covConnChangeCorr,
+       dpi = 600,
+       units = "px", width = 8000, height = 3000)
+
+# PLOT COVER AND CONNECTIVITY ---------------------------------------
+
+# Set shared theme parameters
+sharedTheme <- theme(legend.justification = c(0.1, 0.1),
+                     legend.position = c(0.1, 0.65),
+                     plot.title = element_text(size = 16, hjust = 0.1, vjust = -5),
+                     plot.margin = margin(-1, -1, -1, -1, "lines" ))
+
+### CREATE STATIC PLOTS
+
+# BROADLEAF COVER
 
 # Plot - first set plot aesthetics 
-BFchangeMap <- ggplot(data = as.data.frame(coverBF_10k, xy = TRUE),
-                    aes(x = x, y = y,
-                        colour = change ,
-                        fill = change)) +
+staticBF_map <- ggplot(data = filter(plot_df, type == "Broadleaf"),
+                       aes(x = x, y = y, 
+                           colour = year2015 * 100,
+                           fill = year2015 * 100)) +
   
   # Set equal coordinates
   coord_equal() +
@@ -132,44 +202,175 @@ BFchangeMap <- ggplot(data = as.data.frame(coverBF_10k, xy = TRUE),
   # Land cover raster
   geom_tile() +
   
+  # Fill options
+  scale_fill_gradient2( "Proportion\nbroadleaf cover",
+                        midpoint = 75,
+                        low = "grey90",
+                        mid = "#238b45",
+                        high = "#00441b",
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines")),
+                        labels = c("0%", "50%", "100%"),
+                        breaks = c(0, 50, 100),
+                        limits = c(0, 100) ) +
+  
+  # Country boundary polygons
+  geom_sf(data = st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
+  
+  # Set theme parameters
+  theme_void() +
+  ggtitle("(a)") +
+  sharedTheme
+
+# CONIFEROUS COVER
+
+# Plot - first set plot aesthetics 
+staticCF_map <- ggplot(data = filter(plot_df, type == "Coniferous"),
+                       aes(x = x, y = y,
+                           colour = year2015 * 100,
+                           fill = year2015 * 100)) +
+  
+  # Set equal coordinates
+  coord_equal() +
+  
+  # Land cover raster
+  geom_tile() +
+  
+  # Fill options
+  scale_fill_gradient2( "Proportion\nconiferous cover",
+                        midpoint = 75,
+                        low = "grey90",
+                        mid = "#238b45",
+                        high = "#00441b",
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines")),
+                        labels = c("0%", "50%", "100%"),
+                        breaks = c(0, 50, 100),
+                        limits = c(0, 100) ) +
+  
+  # Country boundary polygons
+  geom_sf(data = st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
+  
+  # Set theme parameters
+  theme_void() +
+  ggtitle("(c)") +
+  sharedTheme
+
+### CONNECTIVITY
+
+# Plot - first set plot aesthetics 
+staticConn_map <- ggplot(data = filter(plot_df, type == "Connectivity"),
+                       aes(x = x, y = y, 
+                           colour = year2015,
+                           fill = year2015)) +
+  
+  # Set equal coordinates
+  coord_equal() +
+  
+  # Land cover raster
+  geom_tile() +
+  
+  # Fill options
+  scale_fill_gradient2( "Connectivity (Amps)",
+                        midpoint = 150,
+                        low = "grey90",
+                        mid = "#238b45",
+                        high = "#00441b",
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines"))) +
+  
+  # Country boundary polygons
+  geom_sf(data = st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
+  geom_sf(data = st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
+  
+  # Set theme parameters
+  theme_void() +
+  ggtitle("(e)") +
+  sharedTheme
+
+### CREATE CHANGE PLOTS (BROADLEAF COVER, CONIFEROUS COVER, CONNECTIVITY)
+
+# BROADLEAF COVER
+
+# Plot - first set plot aesthetics 
+changeBF_map <- ggplot(data = filter(plot_10k_df, type == "Broadleaf"),
+                      aes(x = x, y = y,
+                          colour = change,
+                          fill = change)) +
+  
+  # Set equal coordinates
+  coord_equal() +
+  
+  # Land cover raster
+  geom_tile() +
+
+  # Fill options
+  scale_fill_gradient2( "Proportion broadleaf\ncover change 1990-2015",
+                        midpoint = 0,
+                        low = wes_palette("Zissou1")[5],
+                        mid = "white",
+                        high = wes_palette("Zissou1")[1],
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines"))) +
+  
   # Country boundary polygons
   geom_sf(data = sf::st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
   
-  # facet_wrap("type",
-  #            labeller = labeller(type = type.labs)) +
-  scale_colour_gradient2(midpoint = 0,
-                         low = "#a50026",
-                         mid = "#ffffbf",
-                         high = "#313695",
-                         guide = NULL) +
-  scale_fill_gradient2( "Absolute proportion broadleaf\ncover change 1990-2015     ",
-                        midpoint = 0,
-                        low = "#a50026",
-                        mid = "#ffffbf",
-                        high = "#313695",
-                        guide = guide_colourbar(direction = "horizontal",
-                                                ticks = TRUE,
-                                                draw.ulim = FALSE,
-                                                draw.llim = FALSE,
-                                                title.position = "top",
-                                                label.position = "bottom",
-                                                label.theme = element_text(size = 10),
-                                                title.theme = element_text(size = 10),
-                                                barwidth = unit(8, "lines"),
-                                                barheight = unit(0.5, "lines")) ) +
-  
   # Set theme parameters
   theme_void() +
-  changeTheme
+  ggtitle("(b)") +
+  sharedTheme
 
-### Coniferous
+
+# CONIFEROUS COVER
 
 # Plot - first set plot aesthetics 
-CFchangeMap <- ggplot(data = as.data.frame(coverCF_10k, xy = TRUE),
+changeCF_map <- ggplot(data = filter(plot_10k_df, type == "Coniferous"),
                       aes(x = x, y = y,
-                          colour = change ,
+                          colour = change,
                           fill = change)) +
   
   # Set equal coordinates
@@ -178,45 +379,41 @@ CFchangeMap <- ggplot(data = as.data.frame(coverCF_10k, xy = TRUE),
   # Land cover raster
   geom_tile() +
   
+  # Fill options
+  scale_fill_gradient2( "Proportion coniferous\ncover change 1990-2015",
+                        midpoint = 0,
+                        low = wes_palette("Zissou1")[5],
+                        mid = "white",
+                        high = wes_palette("Zissou1")[1],
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines"))) +
+  
   # Country boundary polygons
   geom_sf(data = sf::st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
   
-  # facet_wrap("type",
-  #            labeller = labeller(type = type.labs)) +
-  scale_colour_gradient2(midpoint = 0,
-                         low = "#a50026",
-                         mid = "#ffffbf",
-                         high = "#313695",
-                         guide = NULL) +
-  scale_fill_gradient2( "Absolute proportion coniferous\ncover change 1990-2015     ",
-                        midpoint = 0,
-                        low = "#a50026",
-                        mid = "#ffffbf",
-                        high = "#313695",
-                        guide = guide_colourbar(direction = "horizontal",
-                                                ticks = TRUE,
-                                                draw.ulim = FALSE,
-                                                draw.llim = FALSE,
-                                                title.position = "top",
-                                                label.position = "bottom",
-                                                label.theme = element_text(size = 10),
-                                                title.theme = element_text(size = 10),
-                                                barwidth = unit(8, "lines"),
-                                                barheight = unit(0.5, "lines")) ) +
-  
   # Set theme parameters
   theme_void() +
-  changeTheme
+  ggtitle("(d)") +
+  sharedTheme
 
-### Connectivity
+# CONNECTIVITY
 
 # Plot - first set plot aesthetics 
-connChangeMap <- ggplot(data = as.data.frame(connW_10k, xy = TRUE),
-                      aes(x = x, y = y,
-                          colour = change ,
-                          fill = change)) +
+changeConn_map <- ggplot(data = filter(plot_10k_df, type == "Connectivity"),
+                        aes(x = x, y = y,
+                            colour = change,
+                            fill = change)) +
   
   # Set equal coordinates
   coord_equal() +
@@ -224,47 +421,45 @@ connChangeMap <- ggplot(data = as.data.frame(connW_10k, xy = TRUE),
   # Land cover raster
   geom_tile() +
   
+  # Fill options
+  scale_fill_gradient2( "Woodland connectivity\nchange 1990-2015 (amps)",
+                        midpoint = 0,
+                        low = wes_palette("Zissou1")[5],
+                        mid = "white",
+                        high = wes_palette("Zissou1")[1],
+                        aesthetics = c("fill", "colour"),
+                        guide = guide_colourbar(direction = "vertical",
+                                                ticks = TRUE,
+                                                draw.ulim = FALSE,
+                                                draw.llim = FALSE,
+                                                title.position = "top",
+                                                label.position = "left",
+                                                label.theme = element_text(size = 8),
+                                                title.theme = element_text(size = 10),
+                                                barwidth = unit(1, "lines"),
+                                                barheight = unit(5, "lines"))) +
+  
   # Country boundary polygons
   geom_sf(data = sf::st_as_sf(UK), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(Ireland), fill = NA, colour = "black", inherit.aes = FALSE) +
   geom_sf(data = sf::st_as_sf(IsleOfMan), fill = NA, colour = "black", inherit.aes = FALSE) +
   
-  # facet_wrap("type",
-  #            labeller = labeller(type = type.labs)) +
-  scale_colour_gradient2(midpoint = 0,
-                         low = "#a50026",
-                         mid = "#ffffbf",
-                         high = "#313695",
-                         guide = NULL) +
-  scale_fill_gradient2( "Woodland connectivity change\n1990-2015 (amps) ",
-                        midpoint = 0,
-                        low = "#a50026",
-                        mid = "#ffffbf",
-                        high = "#313695",
-                        guide = guide_colourbar(direction = "horizontal",
-                                                ticks = TRUE,
-                                                draw.ulim = FALSE,
-                                                draw.llim = FALSE,
-                                                title.position = "top",
-                                                label.position = "bottom",
-                                                label.theme = element_text(size = 10),
-                                                title.theme = element_text(size = 10),
-                                                barwidth = unit(8, "lines"),
-                                                barheight = unit(0.5, "lines")) ) +
-  
   # Set theme parameters
   theme_void() +
-  changeTheme
+  ggtitle("(f)") +
+  sharedTheme
 
 ### COLLATE PLOTS AND SAVE
 
 # Group into single grob
-allChange <- gridExtra::arrangeGrob( BFchangeMap, CFchangeMap, connChangeMap,
-                       nrow = 1, ncol = 3)
+allChange <- gridExtra::arrangeGrob( staticBF_map, changeBF_map,
+                                     staticCF_map, changeCF_map,
+                                     staticConn_map, changeConn_map,
+                                     nrow = 3, ncol = 2)
 
 # Save to .png file
 ggsave(filename = paste0("../Writing/Plots/",
                          "Cover_connectivity_change.png"),
        allChange,
        dpi = 600,
-       units = "px", width = 6000, height = 3600)
+       units = "px", width = 4000, height = 8800) 

@@ -8,6 +8,10 @@
 # Script Description: Download files quickly from HAD database 
 # through webscraping approach for years 1979 to present
 #
+# N.B. Original data downloaded for modelling was HaDUK-Grid v1.1 
+# (https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.1.0.0)
+# but have updated link to most recent version for script
+# Also, may timeout so have to run several times
 
 ### LOAD LIBRARIES & INSTALL PACKAGES ---------------------------------
 
@@ -23,10 +27,13 @@ library(rvest)
 # Login page
 loginPageCEDA <- "https://auth.ceda.ac.uk/account/signin"
 
+# Dataset link 
+dataCEDA <- "https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.2.0.ceda"
+
 # Username and password (ENTER HERE)
 username <- "ccunningham567" #"*****"
-password <- #"*****"
-
+password <- "L@tymer4" #"*****"
+  
 # Set years to ignore
 yearCutoff <- 1978 # >1980 but need 1979 for winter cold [MTCO] calculation
 
@@ -51,7 +58,7 @@ session_submit(pgsession, filled_form)
 # NAVIGATE TO DOWNLOAD PAGE & EXTRACT DOWNLOAD LINKS
 
 # CEH download page
-linkCEDA <- "https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.1.0.0/1km/rainfall/mon/latest"
+linkCEDA <- paste0(dataCEDA, "/1km/rainfall/mon/latest")
 
 # Navigate to URL
 page <- session_jump_to(pgsession, linkCEDA)
@@ -80,16 +87,20 @@ if(!file.exists(destFolder)) { dir.create(destFolder)}
 # For every link....
 for (i in links) {
   
-  # Jump to download link
-  download <- session_jump_to(page,  i)
+  # Create destination file name
+  fileName <- paste0(destFolder,
+                     "/",
+                     sub("\\?download=1", "", basename(i)))
   
-  # Create file name
-  fileName <- basename(i) %>%
-    sub("\\?download=1", "", .)
+  # If file doesn't exist, then download
+  if (!file.exists(fileName)) {
   
-  # Extract content and save in destination folder
-  writeBin(download$response$content, paste0(destFolder, "/", fileName ))
-  
+    # Jump to download link
+    download <- session_jump_to(page,  i)
+    
+    # Extract content and save in destination folder
+    writeBin(download$response$content, fileName )
+  }
 }
 
 ### CURRENT DAILY MINIMUM TEMPERATURE --------------------------
@@ -97,7 +108,7 @@ for (i in links) {
 # NAVIGATE TO DOWNLOAD PAGE & EXTRACT DOWNLOAD LINKS
 
 # CEH download page
-linkCEDA <- "https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.1.0.0/1km/tasmin/day/latest"
+linkCEDA <- paste0(dataCEDA, "/1km/tasmin/day/latest")
 
 # Navigate to URL
 page <- session_jump_to(pgsession, linkCEDA)
@@ -126,16 +137,20 @@ if(!file.exists(destFolder)) { dir.create(destFolder)}
 # For every link....
 for (i in links) {
   
-  # Jump to download link
-  download <- session_jump_to(page,  i)
+  # Create destination file name
+  fileName <- paste0(destFolder,
+                     "/",
+                     sub("\\?download=1", "", basename(i)))
   
-  # Create file name
-  fileName <- basename(i) %>%
-    sub("\\?download=1", "", .)
-
-  # Extract content and save in destination folder
-  writeBin(download$response$content, paste0(destFolder, "/", fileName ))
-  
+  # If file doesn't exist, then download
+  if (!file.exists(fileName)) {
+    
+    # Jump to download link
+    download <- session_jump_to(page,  i)
+    
+    # Extract content and save in destination folder
+    writeBin(download$response$content, fileName )
+  }
 }
 
 ### CURRENT DAILY MAXIMUM TEMPERATURE --------------------------
@@ -143,7 +158,7 @@ for (i in links) {
 # NAVIGATE TO DOWNLOAD PAGE & EXTRACT DOWNLOAD LINKS
 
 # CEH download page
-linkCEDA <- "https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.1.0.0/1km/tasmax/day/latest"
+linkCEDA <- paste0(dataCEDA, "/1km/tasmax/day/latest")
 
 # Navigate to URL
 page <- session_jump_to(pgsession, linkCEDA)
@@ -172,15 +187,18 @@ if(!file.exists(destFolder)) { dir.create(destFolder)}
 # For every link....
 for (i in links) {
   
-  # Jump to download link
-  download <- session_jump_to(page,  i)
+  # Create destination file name
+  fileName <- paste0(destFolder,
+                     "/",
+                     sub("\\?download=1", "", basename(i)))
   
-  # Create file name
-  fileName <- basename(i) %>%
-    sub("\\?download=1", "", .)
-  
-  # Extract content and save in destination folder
-  writeBin(download$response$content, paste0(destFolder, "/", fileName ))
-  
+  # If file doesn't exist, then download
+  if (!file.exists(fileName)) {
+    
+    # Jump to download link
+    download <- session_jump_to(page,  i)
+    
+    # Extract content and save in destination folder
+    writeBin(download$response$content, fileName )
+  }
 }
-
