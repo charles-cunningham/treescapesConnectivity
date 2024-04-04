@@ -277,11 +277,9 @@ richnessMap <- ggplot(data = occ_df) +
           inherit.aes = FALSE) +
   
   theme_void()+
-  theme(legend.position = c(0.3,0.8),
+  theme(legend.position = c(0.3,0.9),
         legend.text = element_text(size = 16),
-        legend.title = element_text(size = 16),
-        plot.background = element_rect(fill = "white",
-                                       colour = "white"))
+        legend.title = element_text(size = 16))
 
 # Create priority map
 priorityMap <- ggplot(data = bivariate_df) +
@@ -324,9 +322,7 @@ priorityMap <- ggplot(data = bivariate_df) +
   
   theme_void()+
   theme(legend.position = c(0.3,0.9),
-        legend.text = element_text(size = 16),
-        plot.background = element_rect(fill = "white",
-                                       colour = "white"))
+        legend.text = element_text(size = 16))
 
 # Adjust tile plot for multi-pane plot
 tilePlot <- tilePlot +
@@ -339,7 +335,8 @@ bivarPlot <- cowplot::ggdraw(clip = "on") +
   cowplot::draw_plot(priorityMap, 0.5, 0, 0.5, 0.55, vjust = 0.05) +
   cowplot::draw_label("(a)", 0.015, 0.995, size = 22) +
   cowplot::draw_label("(b)", 0.015, 0.525, size = 22) +
-  cowplot::draw_label("(c)", 0.515, 0.525, size = 22)
+  cowplot::draw_label("(c)", 0.515, 0.525, size = 22) +
+  theme(plot.background = element_rect( fill = "white", colour = "white"))
   
 # Save
 ggsave(filename = paste0("../Writing/Plots/", "PrioritiesPlot.png"),

@@ -103,7 +103,7 @@ summary_taxa_df <- meta_df %>%
   ungroup %>%
   # ... proportion
   mutate(freq = prop.table(nuSpecies),
-         .by = c(taxa, broadleafAssociation, coniferousAssociation, openAssociation)) %>%
+         .by = taxa, connectivitySig) %>%
   # # ...and total species per taxa
   mutate(nuTaxa = sum(nuSpecies), .by = taxa)
 
@@ -118,7 +118,7 @@ summary_pooled_df <- meta_df %>%
   ungroup %>%
   # ... proportion
   mutate(freq = prop.table(nuSpecies),
-         .by = broadleafAssociation, coniferousAssociation, openAssociation) %>%
+         .by = connectivitySig) %>%
   # Add taxa column
   add_column(taxa = "Pooled species") %>%
   # Add total number of species column
