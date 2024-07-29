@@ -20,10 +20,10 @@ library(tidyverse)
 # DATA FILES ------------------------------------------
 
 # GB data
-recordsGB <- read.table("../Data/Species_data/taxaSummaryGB.txt", header = TRUE, sep = '\t')  
+recordsGB <- read.table("../Data/Species_data/DataSummaries/taxaSummaryGB.txt", header = TRUE, sep = '\t')  
 
 # NI data 
-recordsNI <- read.table("../Data/Species_data/taxaSummaryNI.txt", header = TRUE, sep = '\t')
+recordsNI <- read.table("../Data/Species_data/DataSummaries/taxaSummaryNI.txt", header = TRUE, sep = '\t')
 
 # JOIN DATA FILES TOGETHER ------------------------------
 

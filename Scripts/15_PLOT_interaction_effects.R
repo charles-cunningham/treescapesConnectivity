@@ -65,7 +65,7 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 # # Calculate max connectivity value
 # maxConnectivity <- max(connW_df$Connectivity)
 # 
-# # Create unscaled data frame of cover and connectivity values 
+# # Create unscaled data frame of cover and connectivity values
 # # to predict over with 100 prediction steps over entire range
 # # (will be finding values within intervals so use nSteps +1)
 # BF_pred_df <-  expand.grid("BF_pred" = seq(0,
@@ -81,8 +81,8 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 #                                              maxConnectivity ,
 #                                              length.out = nSteps + 1))
 # 
-# ### Remove prediction grid cells with no actual data points, we want predictions to
-# ### be possible, i.e. high connectivity with very low cover is impossible
+# ### Calculate frequency of grid cells,so that we can subset later to 
+# # only observed cover/connectivity combinations
 # 
 # # Create data frame of observed cover and connectivity data points
 # BF_data_pts <- data.frame("Cover" = coverBF_df$Cover,
@@ -94,8 +94,8 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 # BFcoverBins <- findInterval(BF_data_pts[, "Cover"],
 #                           unique(BF_pred_df[, "BF_pred" ]),
 #                           all.inside = TRUE) %>%
-#   # ... and use to create associated interval mid-point
-#   unique(BF_pred_df[, "BF_pred"] + 1/(nSteps*2))[.] 
+#   # ... and use to create associated interval mid-points
+#   unique(BF_pred_df[, "BF_pred"] + 1/(nSteps*2))[.]
 # # Convert cover data points to prediction interval bin number...
 # CFcoverBins <- findInterval(CF_data_pts[, "Cover"],
 #                           unique(CF_pred_df[, "CF_pred" ]),
@@ -103,11 +103,11 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 #   # ...and use to create associated interval mid-point
 #   unique(CF_pred_df[, "CF_pred"] + 1/(nSteps*2))[.]
 # 
-# # Convert cover data points to prediction interval bin number...
+# # Convert connectivity data points to prediction interval bin number...
 # connBins <- findInterval(BF_data_pts[,"Connectivity"],
 #                           unique(BF_pred_df[, "conn_pred"]),
 #                          all.inside = TRUE) %>%
-#   # ...and use to create associated interval mid-point
+#   # ...and use to create associated interval mid-points
 #   unique(BF_pred_df[, "conn_pred"] + maxConnectivity/(nSteps*2))[.] # Can use BF as same number of rows
 # 
 # # Create a data frame of cross-occurrence of cover and connectivity bins
@@ -119,10 +119,6 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 #                     "Connectivity" = connBins) %>%
 #   as.data.frame %>%
 #   mutate_all(function(x) {as.numeric(as.character(x))} )
-# 
-# # Remove bins with no presences
-# BFpredBins <- BFpredBins[BFpredBins$Freq > 0,]
-# CFpredBins <- CFpredBins[CFpredBins$Freq > 0,]
 # 
 # ### Scale covariates
 # 
@@ -147,9 +143,9 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 # 
 # ### Calculate simplified prediction from coverScaled, connectivity, and their interaction
 # 
-# # Create empty comlumns to be populated
+# # Create empty columns to be populated
 # BFpredBins$mean <- BFpredBins$q0.05 <- BFpredBins$q0.95 <-
-#   CFpredBins$mean <- CFpredBins$q0.05 <- CFpredBins$q0.95 <-NA
+#   CFpredBins$mean <- CFpredBins$q0.05 <- CFpredBins$q0.95 <- NA
 # 
 # # For each prediction combination...
 # for (i in 1:NROW(BFpredBins)) {
@@ -193,7 +189,8 @@ for (i in c("BF", "CF")) {
   
   linePlot <- 
     get(paste0(i, "predBins")) %>%
-    filter(Cover == 0.105  |
+    filter(Freq > 0) %>% # Only use cells  with observed combinations
+    filter(Cover == 0.105  | # Select, 10%, 30%, and 50% cover
              Cover == 0.305 |
              Cover == 0.505) %>% 
     
@@ -209,8 +206,7 @@ for (i in c("BF", "CF")) {
     # Define colour scale and legend label
     scale_colour_manual(aesthetics = c("colour", "fill"),
                         name = "",
-                        values = wes_palette("Zissou1")[c(1,3,5)] %>% 
-                          rev,
+                        values = wes_palette("FantasticFox1")[c(5,4,2)],
                         labels = c("Low cover (10%)",
                                    "Moderate cover (30%)",
                                    "High cover (50%)")) +
@@ -245,6 +241,68 @@ for (i in c("BF", "CF")) {
          height = 5000)
 }
 
+# CALCULATE CONNECTIVITY OPPORTUNITY SPACE -----------------
+# N.B. Broadleaf-only
+# In order to identify area with highest potential for biodiversity gains
+# from increasing broadleaf-woodland connectivity, we need to identify where
+# the modelled interaction effect shows an occurrence increase from increasing
+# connectivity.
+# Hence here we identify the cover-connectivity space where the entire 
+# 95% credible interval shows increase in occurrence. We do this by looping through 
+# every cover value, and seeing where the occurrence maxima is for the connectivity values
+
+# Create dataframe of cover and connectivity space to populate with the opportunity plane
+oppSpace <- data.frame( cover = unique(BFpredBins$Cover),
+                        connectivity = NA)
+
+# For each row of oppSpace, find the connectivity value associated with each cover value
+# where the occurrence increase from connectivity stops
+for (i in 1:NROW(oppSpace)) {
+
+  # Filter all prediction bins to only oppSpace row i cover value
+  minModOcc <- BFpredBins %>%
+    filter(Cover == oppSpace[i, "cover"])
+  
+  # Extract 'lower credible interval' sign of change for each connectivity value,
+  # i.e. is connectivity increasing or decreasing from each value to next
+  signLowerQ <- minModOcc %>%
+    pull("q0.05") %>%
+    diff %>%
+    sign
+  length(diff(signLowerQ))
+  # Extract 'mean' sign of change for each connectivity value
+  signMean <- minModOcc %>%
+    pull("mean") %>%
+    diff %>%
+    sign
+  
+  ### Assign connectivity value
+  
+  # No inflection:
+  # If occurrence value always increases for increasing connectivity lower quantile...
+  if(all(signLowerQ == 1)) {
+    # Assign max connectivity value (plus one for visualisation on grid)
+    oppSpace[i, "connectivity"] <- max(minModOcc$Connectivity) + 1
+    
+    # No inflection:
+    # If occurrence value is decreasing right from the start... 
+    } else if (signLowerQ[1] == -1) {
+      # Assign minimum connectivity value = 0
+      oppSpace[i, "connectivity"] <- 0
+      
+      # Inflection:
+      } else {
+        # Identify last value before increase switches to a decrease (local maxima)
+        oppSpace[i, "connectivity"] <- which(diff(signLowerQ) == -2) %>%
+          min %>% # ... and take the smallest value, just in case there are more than one
+          minModOcc[., "Connectivity"] # Extract associated predicted connectivity
+      }
+}
+
+# Save opportunity space
+saveRDS(oppSpace,
+        file ="../Data/Spatial_Data/opportunitySpaceBF.RDS")
+
 # TILE PLOTS ------------------------------------------
 
 # CONNECTIVITY-OCCUPANCY LINE PLOTS
@@ -261,6 +319,7 @@ for (i in c("BF", "CF")) {
     
     # Create plot
     linePlot <- get(paste0(i, "predBins")) %>%
+      filter(Freq > 0) %>% # Only use cells  with observed combinations
       filter(Cover == as.character(j)) %>%
       ggplot(aes(x = Connectivity,
                  y = 1 - exp(-exp(mean)))) +
@@ -298,6 +357,8 @@ for (i in c("BF", "CF")) {
     paste0(., "predBins") %>%
     # Get object
     get %>%
+    # Only use cells  with observed combinations
+    filter(Freq > 0) %>% 
     
     # Start ggplot object
     ggplot(aes(x = Cover,
@@ -312,12 +373,10 @@ for (i in c("BF", "CF")) {
     coord_cartesian(expand = FALSE) +
     
     # Define colour scale and legend label
-    scale_fill_gradientn(aesthetics = c("fill", "colour"),
+    scale_fill_distiller(aesthetics = c("fill", "colour"),
                          name = "Occurrence\nProbability",
-                         colours = wes_palette("Zissou1",
-                                               100,
-                                               type = "continuous") %>%
-                           rev,
+                         palette = "YlGnBu",
+                         direction = 1,
                          guide = guide_colorbar(barwidth = 10)) +
     
     # Set plot title and axes labels
@@ -341,14 +400,12 @@ for (i in c("BF", "CF")) {
   if (i == "BF") {
     tilePlotPlusAnnotation <- tilePlot +
       # Add main connectivity priority box
-      geom_rect(aes(xmin = 0,
-                    xmax = 0.2,
-                    ymin = 0,
-                    ymax = 75),
+      geom_line(data = oppSpace, aes(x = cover,
+                                     y = connectivity),
                 colour = "black",
-                fill = NA, 
                 linetype = 2,
-                linewidth = 0.5) +
+                linewidth = 1,
+                inherit.aes = FALSE) +
       # Add connectivity box key
       geom_rect(aes(xmin = 0.76,
                     xmax = 0.80,
@@ -411,6 +468,8 @@ for (i in c("BF", "CF")) {
     paste0(., "predBins") %>%
     # Get object
     get %>%
+    # Only use cells  with observed combinations
+    filter(Freq > 0) %>% 
     
     # Start ggplot object
     ggplot(aes(x = Cover,
@@ -424,12 +483,10 @@ for (i in c("BF", "CF")) {
     coord_cartesian(expand = FALSE) +
     
     # Define colour scale and legend label
-    scale_fill_gradientn(aesthetics = c("fill", "colour"),
+    scale_fill_distiller(aesthetics = c("fill", "colour"),
                          name = "Occurrence\nProbability",
-                         colours = wes_palette("Zissou1",
-                                               100,
-                                               type = "continuous") %>%
-                           rev,
+                         palette = "YlGnBu",
+                         direction = 1,
                          guide = guide_colorbar(barwidth = 10)) +
     scale_alpha_continuous(name = " Log frequency\n of landscape") +
 
@@ -524,7 +581,7 @@ for (i in c("BF", "CF")) {
                x = -0.03, y = 275, size = 4,
                label = "Occurrence\nProbability",
                angle = 90) +
-      # Add white space around data to allong aex text to fit
+      # Add white space around data to allow text to fit
       coord_cartesian(expand = TRUE)
 
   # Save complex plots

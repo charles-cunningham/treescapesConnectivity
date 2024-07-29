@@ -39,7 +39,7 @@ names(UKLCM2015) <- "Cover2015"
 # 
 # omniOutput <- lapply (1:NROW(inputTable), function(x) { ####!!! Change this line when final connectivity run finishes
 #   
-#   # Create raster fro row i of input table
+#   # Create raster for row i of input table
 #   omniR <- paste0(
 #     "../Data/Spatial_data/Omniscape/",
 #     "radius",
@@ -73,9 +73,10 @@ names(UKLCM2015) <- "Cover2015"
 
 # COMPARE LCM WITH OMNISCAPE OUTPUT --------------------------
 
+# load data
 omniOutput1km <- rast("../Data/Spatial_data/Omniscape/omniConn_1km.tif")
 
-# Create single data frame with LCm and omniscape output
+# Create single data frame with LCM cover and Omniscape connectivityoutput
 all_df <- c( UKLCM1990,  UKLCM2015, omniOutput1km) %>%
   as.data.frame() %>%
   drop_na
@@ -84,31 +85,59 @@ all_df <- c( UKLCM1990,  UKLCM2015, omniOutput1km) %>%
 y1990_df <- all_df[,grep("1990", c( names(UKLCM1990), names(UKLCM2015), names(omniOutput1km)) )] 
 y2015_df <- all_df[,grep("2015", c( names(UKLCM1990), names(UKLCM2015), names(omniOutput1km))  )]
 
-# Shortedn column names for plot
+# OMNISCAPE COMPARISON PLOT ----------------------------------
+
+# Edit column names for plot
 names(y1990_df) <- names(y1990_df) %>%
-  gsub("radius", "rad", .) %>%
-  gsub("resistance", "res", .) %>%
-  gsub("year", "", .)
+  gsub("radius", "radius=", .) %>%
+  gsub("resistance", "resistance=", .) %>%
+  gsub("_", ", ", .) %>%
+  gsub(", year1990", "", .) %>%
+  gsub("Cover1990", "Cover", .)
 names(y2015_df) <- names(y2015_df) %>%
-  gsub("radius", "rad", .) %>%
-  gsub("resistance", "res", .) %>%
-  gsub("year", "", .)
+  gsub("radius", "radius=", .) %>%
+  gsub("resistance", "resistance=", .) %>%
+  gsub("_", ", ", .) %>%
+  gsub(", year2015", "", .) %>%
+  gsub("Cover2015", "Cover", .)
 
-# CORRELATION
+# CORRELATION PLOT -------------------------------------------------
 
-res <- cor(y1990_df)
-#png(filename = 'figures/corr_plot.png', width = 45, height = 30, units = "cm", res = 300)
-corrplot(res, type = "upper", order = "hclust",
-         method = "color", addCoef.col="black", number.cex = 0.75,
-         tl.col = "black", tl.srt = 45, tl.cex = 0.8)
+# 1990 correlation plot
+cor1990 <- cor(y1990_df)
+png(filename = '../Writing/Plots/corr_omni_1990.png',
+    width = 30, height = 30, units = "cm", res = 300)
+corrplot(cor1990, type = "upper", order = "original",
+         method = "square", addCoef.col="white", tl.col = "black",
+          tl.srt = 45)
+dev.off()
 
-res <- cor(y2015_df)
-#png(filename = 'figures/corr_plot.png', width = 45, height = 30, units = "cm", res = 300)
-corrplot(res, type = "upper", order = "hclust",
-         method = "color", addCoef.col="black", number.cex = 0.75,
-         tl.col = "black", tl.srt = 45, tl.cex = 0.8)
+# 2015 correlation plot
+cor2015 <- cor(y2015_df)
+png(filename = '../Writing/Plots/corr_omni_2015.png',
+    width = 30, height = 30, units = "cm", res = 300)
+corrplot(cor2015, type = "upper", order = "original",
+         method = "square", addCoef.col="white",  tl.col = "black",
+          tl.srt = 45)
+dev.off()
 
+# Combine into single plot
+corBoth <- cowplot::ggdraw(clip = "on") +
+  cowplot::draw_image('../Writing/Plots/corr_omni_1990.png', -0.05, 0.45, 1.1, 0.55) +
+  cowplot::draw_image('../Writing/Plots/corr_omni_2015.png', -0.05, -0.05, 1.1, 0.55) +
+  cowplot::draw_label("(a) 1990", 0.1, 0.95, size = 22) +
+  cowplot::draw_label("(b) 2015", 0.1, 0.45, size = 22)
+  
+# Save
+ggsave(filename = paste0("../Writing/Plots/", "omniCorr.png"),
+       corBoth,
+           dpi = 600,
+           units = "px", width = 4000, height = 8000)  
 
-# Used radius 160 and resistance 100 as compromise between correlation
-# and previous estimates of conductivity i.e. Eycott 2011
+# Remove individual plots as not needed
+unlink('../Writing/Plots/corr_omni_1990.png')
+unlink('../Writing/Plots/corr_omni_2015.png') 
 
+# N.B.
+# Radius 160 (4km) and resistance 100 is compromise between correlation
+# and previous estimates of conductivity from literature: we use this.

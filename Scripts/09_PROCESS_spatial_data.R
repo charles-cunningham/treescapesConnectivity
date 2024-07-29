@@ -85,7 +85,7 @@ names(coverCF) <- paste0(names(coverCF),"_", c("1990", "2015"))
 
 # CONNECTIVITY COVARIATE
 
-# Read in rasters (need to aggregate to 1km)
+# Read in rasters (need to aggregate to 1km using mean)
 conn1990 <- rast(conn1990File) %>%
   terra::aggregate(., fact = 40, sum, na.rm = TRUE) / (40^2)
 conn2015 <- rast(conn2015File) %>%
@@ -321,7 +321,7 @@ for (i in scalingParams$variable) {
   iVar <- get(i)
   
   # Extract values from all iVar layers
-  iVarValues <- iVar[] %>% # Extract SGDF values 
+  iVarValues <- iVar[] %>% # Extract values 
     as.matrix %>% # Convert into matrix
     as.vector %>% # Merge layer columns into single vector
     na.omit # Remove NAs
@@ -334,7 +334,7 @@ for (i in scalingParams$variable) {
   scalingParams[ scalingParams$variable == i, "variableMean"] <- iVarMean
   scalingParams[ scalingParams$variable == i, "variableSD"] <- iVarSD
   
-  # Use parameters to scale the data (need to convert back to raster briefly)
+  # Use parameters to scale the data
   iVar <- ( iVar - iVarMean ) / iVarSD
 
   # Overwrite object

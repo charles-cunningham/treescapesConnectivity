@@ -48,6 +48,9 @@ IsleOfMan <- vect("../Data/Spatial_data/Boundaries_and_CRS/IsleOfMan/IMN.shp")
 # Load previous plots
 tilePlot <- readRDS("../Data/Species_Data/tilePlotBF.RDS")
 
+# Load opportunity space
+oppSpace <- readRDS("../Data/Spatial_Data/opportunitySpaceBF.RDS")
+
 # DESCRIPTIVE POOLED STATS --------------------------------
 
 # Group by taxa group and effect category
@@ -58,7 +61,7 @@ group_df <- meta_df %>%
 # Get basic numbers
 summarise(group_df, length(species))
 
-# GROUPED COVER AND CONNECTIVITY ANALYSIS -----------------------------------
+# CREATE SUMMED OCCURENCE MAPS -----------------------------------
 
 # # Create raster for sum of every pooled group
 # 
@@ -208,25 +211,45 @@ connW <- project (connW[["conn_2015"]],
                         st_crs(groupSumsR)$proj4string ))
 crs(connW) <- crs(groupMeansR)
 
-# What are priority landscapes for improving connectivity? 
-# Based on previous plot from script 13, 
-# they are landscapes with approximately <20% cover and
-# <75 amps connectivity?
+### IDENTIFY PRIORITY CELLS
+
+#What are priority landscapes for improving connectivity? 
+# Based on previous plot from script 15, 
+# they are landscapes to the left of the connectivity 
+# opportunity space line (oppSpace). We can use this to idenitify
+# real 1x1km cells within this cover-connectivity space for plot.
+
+# Create polygon object from 'cover-connectivity space' line
+oppPoly <- oppSpace %>%
+  rbind(c(0,0)) %>% # Add 1st additional "point" to create polygon
+  rbind(c(0, max(oppSpace$connectivity))) %>% # Add 2nd additional "point"
+  st_as_sf(coords = c("cover", "connectivity")) %>%  # Convert to sf points object
+  summarise(geometry = st_combine(geometry)) %>% # Create multipoint object 
+  st_cast("POLYGON") # Create polygon
+
+# Convert the cover and connectivity spatRast into a single dataframe,
+# and then convert to points in 'cover-connectivity space'
+covConnPoints <- c(coverBF, connW) %>% 
+  as.data.frame %>%
+  st_as_sf( coords = c("BF_2015" , "conn_2015"))
+
+# Identify points within opportunity space (use oppPoly to filter covConnPoints)
+oppPoints <- lengths(st_intersects(covConnPoints, oppPoly)) > 0
+
+# Make new data frame is x-y space, using oppPoints to identify priority cells
 priorityData <- c(coverBF, connW) %>%
   as.data.frame(., xy = TRUE) %>%
-  mutate(priority = case_when(BF_2015 < 0.2 &
-                                conn_2015 < 75 ~ "TRUE",
-                              TRUE ~ "FALSE"))
+  add_column(priority = oppPoints)
 
-# Assign data (broadleaf species richness)
+### CREATE DATA FRAME
+
+# Convert occurence data to data frame (broadleaf species richness)
 occ_df <- names(groupSumsR) %>% 
   grep("Y ", .) %>%
   groupSumsR[[.]] %>%
   sum %>%
   as.data.frame(., xy = TRUE)
 
-### CREATE DATA FRAME
-  
 # Create bivariate data frame
 bivariate_df <- full_join(occ_df,
                           priorityData[,c("x" ,"y","priority")]) %>%
@@ -296,9 +319,9 @@ priorityMap <- ggplot(data = bivariate_df) +
                     breaks = c(3,2,1,0),
                     values = c("#31a354", "#addd8e", "#ffffcc","black"),
                     labels = c(
-                      "Connectivity opportunity with high occurrence -\nprioritise resilience",
+                      "Connectivity opportunity with high occurrence -\nprioritise resilience within landscape",
                       "Connectivity opportunity -\nbalance colonisation and resilience",
-                      "Connectivity opportunity with low occurrence - \nprioritise colonisation",
+                      "Connectivity opportunity with low occurrence - \nlocate new woodland creation to boost colonisation",
                       "Outside connectivity opportunity space\n(high existing cover/connectivity)")) +
   
   # Add dotted lines around priority areas
@@ -343,4 +366,33 @@ ggsave(filename = paste0("../Writing/Plots/", "PrioritiesPlot.png"),
        bivarPlot,
        dpi = 600,
        units = "px", width = 8000, height = 11000)
+
+# DATA SUMMARIES ----------------------------------------------------------
+
+# Proportion of converged models which are broadleaf-associated species
+NROW(subset(meta_df,broadleafAssociation == "Y")) / NROW(meta_df) * 100
+
+# Proportion of broadleaf-associated species which have positive/negative/no connectivity effect
+NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Pos")) / 
+       NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
+NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Neg")) / 
+  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
+NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "NS")) / 
+  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
+
+# Percentage UK land which is within opportunity space
+sum(bivariate_df$Priority == TRUE) / NROW(bivariate_df) * 100
+
+
+# Percentage UK land which is within opportunity space and top third quantile, and bottom third
+sum(bivariate_df$plotValues == 3) / NROW(bivariate_df) * 100
+sum(bivariate_df$plotValues == 1) / NROW(bivariate_df) * 100
+
+
+
+
+
+
+
+
 
