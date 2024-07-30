@@ -302,7 +302,6 @@ for (i in c(allVar, "UK_R")) {
   # Reproject to km for inlabru
   assign(i, project (get(i), gsub( "units=m", "units=km",
                               st_crs(bng)$proj4string )))
-
 }
 
 # SCALE COVARIATES ------------------------------------------------------
@@ -400,5 +399,4 @@ for (i in c("UK_R", "coverBF", "coverCF", "connW",
                                 i,
                                 ".tif"),
                                 overwrite = TRUE)
-  
 }

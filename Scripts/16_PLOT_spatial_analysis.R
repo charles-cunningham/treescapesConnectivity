@@ -388,11 +388,3 @@ sum(bivariate_df$Priority == TRUE) / NROW(bivariate_df) * 100
 sum(bivariate_df$plotValues == 3) / NROW(bivariate_df) * 100
 sum(bivariate_df$plotValues == 1) / NROW(bivariate_df) * 100
 
-
-
-
-
-
-
-
-

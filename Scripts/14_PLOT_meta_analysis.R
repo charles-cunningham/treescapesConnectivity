@@ -217,21 +217,21 @@ for (i in brmsList) {
   
   # Set x label, and x position for taxa silhouettes for each brms run
   if (i == "connAll_brms") {
-    xLabel <- "Mean effect of connectivity"
+    xLabel <- "Connectivity effect estimate"
   } else if (i == "connBF_brms") {
-    xLabel <- "Mean effect of connectivity"
+    xLabel <- "Connectivity effect estimate"
   } else if (i == "connCF_brms") {
-    xLabel <- "Mean effect of connectivity"
+    xLabel <- "Connectivity effect estimate"
   } else if (i == "connOpen_brms") {
-    xLabel <- "Mean effect of connectivity"
+    xLabel <- "Connectivity effect estimate"
   } else if (i == "coverBF_brms") {
-    xLabel <- "Mean effect of cover"
+    xLabel <- "Cover effect estimate"
   } else if (i == "coverCF_brms") {
-    xLabel <- "Mean effect of cover"
+    xLabel <- "Cover effect estimate"
   } else if (i == "intBF_brms") {
-    xLabel <- "Mean effect of\ncover-connectivity interaction"
+    xLabel <- "Cover-connectivity interaction effect estimate"
   } else if (i == "intCF_brms") {
-    xLabel <- "Mean effect of\ncover-connectivity interaction"
+    xLabel <- "Cover-connectivity interaction effect estimate"
   }
   
   ### PLOT 
@@ -333,7 +333,7 @@ taxaSummaries <- ggplot(data = iBrmsDraws,
              linewidth = 1) +
   
   # Add labels
-  labs(x = "Mean effect of connectivity", # summary measure
+  labs(x = "Connectivity effect estimate", # summary measure
        y = element_blank()) +
   
   # Add theme elements

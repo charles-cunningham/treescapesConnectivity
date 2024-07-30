@@ -269,12 +269,6 @@ for (i in 1:NROW(oppSpace)) {
     pull("q0.05") %>%
     diff %>%
     sign
-  length(diff(signLowerQ))
-  # Extract 'mean' sign of change for each connectivity value
-  signMean <- minModOcc %>%
-    pull("mean") %>%
-    diff %>%
-    sign
   
   ### Assign connectivity value
   
@@ -593,3 +587,4 @@ for (i in c("BF", "CF")) {
          width = 6000,
          height = 5000)
 }
+
