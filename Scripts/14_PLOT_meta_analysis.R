@@ -205,7 +205,7 @@ for (i in brmsList) {
          units = "px", width = 6000, height = 5000)
 }
 
-# PLOT MEANS -------------------------------------------
+# PLOT POOLED ESTIMATES ------------------------------------------
 
 # Loop through meta analysis subsets
 for (i in brmsList) {
@@ -293,7 +293,7 @@ for (i in brmsList) {
     height = 5000)
 }
 
-# PLOT MEAN AND EFFECTS --------------------------------------------
+# PLOT POOLED ESTIMATES AND INDIVIDUAL SPECIES EFFECTS -------------------------
 
 # Loop through meta analysis subsets
 for (i in c( "connAll_brms", "connBF_brms", "connCF_brms", "connOpen_brms" )) {
@@ -319,8 +319,7 @@ taxaSummaries <- ggplot(data = iBrmsDraws,
   
   # Change colours and labels
   scale_y_discrete(labels = taxaGroupLabels) +
-  ggtitle("(a)") + 
-  
+
   # Add vertical lines for pooled effect mean and CI, and 0
   geom_vline(xintercept = fixef(iBrms)[1, 1],
              color = "grey",
@@ -339,8 +338,8 @@ taxaSummaries <- ggplot(data = iBrmsDraws,
   # Add theme elements
   theme_classic() +
   theme(legend.position = "none",
-        axis.text.y = element_text(size = 16),
-        axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 18),
+        axis.text.x = element_text(size = 18),
         axis.title.x = element_text(size = 18),
         plot.title = element_text(size = 22, hjust = -0.4, vjust =-0.2))
 
@@ -388,15 +387,14 @@ sigBarPlot <- ggplot(data = barData,
    coord_flip() +
  
   # Change scales, fills and labels
-  scale_x_discrete(labels = taxaGroupLabels) +
+  scale_x_discrete(labels = NULL) +
   scale_fill_manual(
     "Connectivity effect",
     values = wes_palette("Zissou1")[c(1,3,5)],
     labels = c("Positive", "None", "Negative"),
     guide_coloursteps(title.position = "top")) +
   labs(y = "Number of species") +
-  ggtitle("(b)") + 
-  
+
   # Add phylopic images
   geom_phylopic(data = data.frame(taxa = levels(iBrmsDraws$taxa)) %>%
                   left_join(., phylopicImages,
@@ -411,8 +409,7 @@ sigBarPlot <- ggplot(data = barData,
   
   # Change theme parameters
   theme_classic() +
-  theme(axis.text.y = element_text(size = 16),
-        axis.text.x = element_text(size = 16),
+  theme(axis.text.x = element_text(size = 16),
         axis.title.x = element_text(size = 18),
         axis.title.y = element_blank(),
         panel.grid.major.x= element_line( linewidth = 0.1, color = "black" ),
@@ -424,9 +421,12 @@ sigBarPlot <- ggplot(data = barData,
   
 ### COMBINE AND SAVE
 
-combinedPlot <- gridExtra::arrangeGrob(taxaSummaries,
-                                       sigBarPlot,
-                                       nrow = 1, ncol = 2)
+combinedPlot <- cowplot::ggdraw(clip = "on") +
+  cowplot::draw_plot(taxaSummaries, 0, 0, 0.575, 1) +
+  cowplot::draw_plot(sigBarPlot, 0.575, 0, 0.425, 1,) +
+  cowplot::draw_label("(a)", 0.015, 0.98, size = 24) +
+  cowplot::draw_label("(b)", 0.56, 0.98, size = 24) +
+  theme(plot.background = element_rect( fill = "white", colour = "white"))
 
 # Save
 # Error message like "Removed X rows containing non-finite values (`stat_density_ridges()`)"

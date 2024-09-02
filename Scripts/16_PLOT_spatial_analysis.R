@@ -383,8 +383,14 @@ NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "NS")) /
 # Percentage UK land which is within opportunity space
 sum(bivariate_df$Priority == TRUE) / NROW(bivariate_df) * 100
 
-
 # Percentage UK land which is within opportunity space and top third quantile, and bottom third
 sum(bivariate_df$plotValues == 3) / NROW(bivariate_df) * 100
 sum(bivariate_df$plotValues == 1) / NROW(bivariate_df) * 100
 
+# Proportion of species with positive/negative/no cover:connectivity interaction effect
+NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT > 0 & X0.975quant_BFconnINT > 0)) / 
+  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
+NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT < 0 & X0.975quant_BFconnINT < 0)) / 
+  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
+NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT <= 0 & X0.975quant_BFconnINT >= 0)) / 
+  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
