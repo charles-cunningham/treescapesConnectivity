@@ -635,7 +635,7 @@ ppxl <- mask(UK_R, smoothUK) %>%
 ppxlAll <- fm_cprod(ppxl, data.frame( iYear = seq_len(nYear)))
 
 # Predict using spatio-temporal model
-# ( N.B. exlcuding VISIT_LENGTH means including the reference factor level- long- which is what we want!)
+# ( N.B. excluding VISIT_LENGTH means including the reference factor level- long- which is what we want!)
 modelPred <- predict(model, 
                      ppxlAll, 
                      ~ data.frame(
