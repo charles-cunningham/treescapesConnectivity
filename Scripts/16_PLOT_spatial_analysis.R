@@ -63,16 +63,16 @@ summarise(group_df, length(species))
 
 # CREATE SUMMED OCCURENCE MAPS -----------------------------------
 
-# # Create raster for sum of every pooled group
-# 
+# Create raster for sum of every pooled group
+
 # # Loop through every group in group_df
 # groupSumsR <- lapply(1:NROW(group_keys(group_df)) , function(i) {
-#   
+# 
 #   # Split group into separate df, get df i...
 #   iGroup <- group_split(group_df)[[i]] %>%
 #     dplyr::select(species, taxa) #... and select taxa and species
-#   
-#   # Create list of file names of occupancy plots
+# 
+#   # Create list of file names of occurrence plots
 #   # for every row in iGroup
 #   iGroupFiles <- apply(iGroup, 1, function(j) {
 #     paste0("../Data/Species_data/SDMs/",
@@ -81,27 +81,27 @@ summarise(group_df, length(species))
 #            j["species"],
 #            "/medianPred.tif")
 #   })
-#   
+# 
 #   # Create spatRast (select second layer of each prediction [current])
-#   iGroupRast <- lapply(iGroupFiles, 
+#   iGroupRast <- lapply(iGroupFiles,
 #                        function(x) { rast(x, lyrs = 2) }) %>%
 #     rast
-#   
+# 
 #   # Sum
 #   iGroupSum <- sum(iGroupRast)
-#   
+# 
 #   # Convert projection back from km to m
 #   iGroupSum <- project(iGroupSum, bng)
-#   
+# 
 #   # Change spatRast layer name to group key
 #   names(iGroupSum) <- group_keys(group_df)[i, ] %>%
 #     as.character  %>%
 #     paste(., collapse = " ")
-#   
+# 
 #   return(iGroupSum)
-#   
-#   # Join all group sum spatRasts into single spatRast  
-# }) %>% rast(.) 
+# 
+#   # Join all group sum spatRasts into single spatRast
+# }) %>% rast(.)
 # 
 # # Calculate mean
 # groupMeansR <- groupSumsR /
@@ -109,17 +109,17 @@ summarise(group_df, length(species))
 # 
 # # Save
 # writeRaster(groupSumsR,
-#             "../Data/Species_data/Summed_occupancy_grouped_by_effects.tif",
+#             "../Data/Species_data/Summed_occurrence_grouped_by_effects.tif",
 #             overwrite = TRUE)
 # writeRaster(groupMeansR,
-#             "../Data/Species_data/Mean_occupancy_grouped_by_effects.tif",
+#             "../Data/Species_data/Mean_occurrence_grouped_by_effects.tif",
 #             overwrite = TRUE)
 
 # PLOT RICHNESS MAPS ----------------------------------------------------------
 
 # Load spatRasters
-groupSumsR <- rast("../Data/Species_data/Summed_occupancy_grouped_by_effects.tif")
-groupMeansR <- rast("../Data/Species_data/Mean_occupancy_grouped_by_effects.tif")
+groupSumsR <- rast("../Data/Species_data/Summed_occurrence_grouped_by_effects.tif")
+groupMeansR <- rast("../Data/Species_data/Mean_occurrence_grouped_by_effects.tif")
 
 # Create plot directory
 dir.create("../Writing/Plots/GroupedOccPlots")
@@ -151,7 +151,7 @@ for(i in 1:nlyr(groupMeansR)) {
                           high = "#31a354",
                           guide = NULL) +
     scale_fill_gradient(
-      "Mean relative\noccupancy probability",
+      "Mean relative\noccurrence probability",
       low = "#e5f5e0",
       high = "#31a354",
       #limits = c(0,0.5),
@@ -183,7 +183,7 @@ for(i in 1:nlyr(groupMeansR)) {
           plot.margin = margin(-3, 0, -3, 0, "lines"))
   
   ggsave(filename = paste0("../Writing/Plots/GroupedOccPlots/",
-                           "Occupancy_broadleaf",
+                           "Occurrence_broadleaf",
                            strsplit(names(iGroupMeans_df[3]), " ")[[1]][1],
                            "_connectivity",
                            strsplit(names(iGroupMeans_df[3]), " ")[[1]][2],
@@ -243,7 +243,7 @@ priorityData <- c(coverBF, connW) %>%
 
 ### CREATE DATA FRAME
 
-# Convert occurence data to data frame (broadleaf species richness)
+# Convert occurrence data to data frame (broadleaf species richness)
 occ_df <- names(groupSumsR) %>% 
   grep("Y ", .) %>%
   groupSumsR[[.]] %>%
@@ -258,7 +258,7 @@ bivariate_df <- full_join(occ_df,
 # Change names (no spaces, intuitive)
 names(bivariate_df) <- c("x", "y", "Occurrence", "Priority")
   
-# Create 3 quantile buckets for occupancy
+# Create 3 quantile buckets for occurrence
 quantilesOcc <- bivariate_df %>%
   pull(Occurrence) %>%
   quantile(probs = 0:3/3, na.rm = TRUE)

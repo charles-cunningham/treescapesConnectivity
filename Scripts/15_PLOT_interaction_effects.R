@@ -299,7 +299,7 @@ saveRDS(oppSpace,
 
 # TILE PLOTS ------------------------------------------
 
-# CONNECTIVITY-OCCUPANCY LINE PLOTS
+# CONNECTIVITY-OCCURRENCE LINE PLOTS
 
 # Load interaction prediction object
 load(file = "../Data/Species_data/intPred.RData")
