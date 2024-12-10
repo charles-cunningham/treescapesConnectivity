@@ -31,8 +31,8 @@ loginPageCEDA <- "https://auth.ceda.ac.uk/account/signin"
 dataCEDA <- "https://data.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.2.0.ceda"
 
 # Username and password (ENTER HERE)
-username <- "ccunningham567" #"*****"
-password <- "L@tymer4" #"*****"
+username <- "*****"
+password <- "*****"
   
 # Set years to ignore
 yearCutoff <- 1978 # >1980 but need 1979 for winter cold [MTCO] calculation
