@@ -3,10 +3,11 @@
 # Author: Charles Cunningham
 # Email: charles.cunningham@york.ac.uk
 # 
-# Script Name: Plot processed woodland cover and connectivity
+# Script Name: Plot descriptive statistics plots for cover and connectivity
 #
-# Script Description: Descriptive statistics and plots for cover 
-# and connectivity change summary
+# Script Description: Descriptive statistics plots for cover 
+# and connectivity for each period, change between them, and a correlation
+# plot for all variables
 
 # LOAD LIBRARIES & INSTALL PACKAGES -----------------
 
@@ -18,10 +19,11 @@ library(tidyverse)
 library(terra)
 library(sf)
 library(wesanderson)
+library(corrplot)
 
 # LOAD SPATIAL DATA -------------------------------------
 
-# SpatRasters
+# List all covariate SpatRasters
 for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
                      pattern =  "\\.tif$")) {
   
@@ -35,9 +37,33 @@ UK <- vect("../Data/Spatial_data/Boundaries_and_CRS/UK/GBR.shp")
 Ireland <- vect("../Data/Spatial_data/Boundaries_and_CRS/Ireland/IRL.shp")
 IsleOfMan <- vect("../Data/Spatial_data/Boundaries_and_CRS/IsleOfMan/IMN.shp")
 
-# PROCESS SPATIAL DATA --------------------------------
+# SET PARAMETERS ------------------------------------
 
-### CREATE STANDARDISED RASTERS
+# Set covariate objects
+cov_R <- list(coverBF_scaled, coverCF_scaled, connW_scaled,
+              coverBF_connW, coverCF_connW,
+              GDD5_grp, WMIN_grp, tasCV_grp, soilM_grp, RAIN_grp)
+
+# Set covariate object plot names
+covNames <- c("Broadleaf Cover", "Coniferous Cover", "Connectivity",
+              "Broadleaf-Connectivity interaction",
+              "Coniferous-Connectivity interaction",
+              "Growing degree days (GDD5)", "Minimum winter tempterature (WMIN)",
+              "Temperature seasonality (tasCV)", "Soil moisture (soilM)",
+              "Total annual rainfall (RAIN)")
+
+# PROCESS DATA -------------------------------------
+
+### CREATE STANDARDISED RASTERS FOR CORRELATION PLOT
+
+# Separate spatRasts for each time period
+cov_R_1990 <- lapply(cov_R, function(x) { x[[1]] }) %>% rast(.)
+cov_R_2015 <- lapply(cov_R, function(x) { x[[2]] }) %>% rast(.)
+
+# Rename 
+names(cov_R_1990) <- names(cov_R_2015) <- covNames
+
+### CREATE STANDARDISED RASTERS FOR COVER-CONNECTIVITY PLOTS
 
 # Download BNG WKT string
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -54,9 +80,46 @@ connW <- project(connW, bng)
 # Standardise names
 names(coverBF) <- names(coverCF) <- names(connW) <- c("year1990", "year2015")
 
-### PROCESS SPATRASTERS
+# CORRELATION PLOT -------------------------------------------------
 
-# 1KM STATIC PLOTS
+# 1990 correlation plot
+cor1990 <- cov_R_1990 %>%
+  as.data.frame %>%
+  cor
+png(filename = '../Writing/Plots/corr_all_1990.png',
+    width = 30, height = 30, units = "cm", res = 300)
+corrplot(cor1990, type = "upper", order = "original", 
+         tl.col = "black", addCoef.col="black" ,tl.srt = 45)
+dev.off()
+
+# 2015 correlation plot
+cor2015 <- cov_R_2015 %>%
+  as.data.frame %>%
+  cor
+png(filename = '../Writing/Plots/corr_all_2015.png',
+    width = 30, height = 30, units = "cm", res = 300)
+corrplot(cor2015, type = "upper", order = "original" , 
+         tl.col = "black",addCoef.col="black" ,tl.srt = 45)
+dev.off()
+
+# Combine into single plot
+corBoth <- cowplot::ggdraw(clip = "on") +
+  cowplot::draw_image('../Writing/Plots/corr_all_1990.png', -0.1, 0.4, 1.25, 0.625) +
+  cowplot::draw_image('../Writing/Plots/corr_all_2015.png', -0.1, -0.1, 1.25, 0.625) +
+  cowplot::draw_label("(a) 1990", 0.1, 0.95, size = 22) +
+  cowplot::draw_label("(b) 2015", 0.1, 0.45, size = 22)
+
+# Save
+ggsave(filename = paste0("../Writing/Plots/", "allCorr.png"),
+       corBoth,
+       dpi = 600,
+       units = "px", width = 4000, height = 8400)  
+
+# Remove individual plots as not needed
+unlink('../Writing/Plots/corr_all_1990.png')
+unlink('../Writing/Plots/corr_all_2015.png') 
+
+# 1KM STATIC PLOTS -----------------------------------------
 
 # Calculate change from 1990 to 2015
 coverBF[["change"]] <-  coverBF[["year2015"]] - coverBF[["year1990"]] 

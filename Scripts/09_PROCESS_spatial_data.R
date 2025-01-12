@@ -85,11 +85,11 @@ names(coverCF) <- paste0(names(coverCF),"_", c("1990", "2015"))
 
 # CONNECTIVITY COVARIATE
 
-# Read in rasters (need to aggregate to 1km using mean)
+# Read in rasters and aggregate to 1km using median
 conn1990 <- rast(conn1990File) %>%
-  terra::aggregate(., fact = 40, sum, na.rm = TRUE) / (40^2)
+  terra::aggregate(., fact = 40, fun = "median")
 conn2015 <- rast(conn2015File) %>%
-  terra::aggregate(., fact = 40, sum, na.rm = TRUE) / (40^2)
+  terra::aggregate(., fact = 40, fun = "median")
 
 # Make connectivity covariate
 connW <- c(conn1990, conn2015)

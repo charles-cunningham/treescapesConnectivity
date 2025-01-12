@@ -30,50 +30,47 @@ UKLCM2015 <- extend(UKLCM2015, ext( -10000, 700000, 0, 1300000))
 names(UKLCM1990) <- "Cover1990"
 names(UKLCM2015) <- "Cover2015"
 
-# # CREATE CONNECTIVITY TIFS --------------------------
-# # Takes ~30 mins to run so save at end of section to only need to run once
-#
-# # Read input table
-# inputTable <- read.table("../Data/Spatial_data/Omniscape/inputTable.txt",
-#                          header = TRUE)
-# 
-# omniOutput <- lapply (1:NROW(inputTable), function(x) { ####!!! Change this line when final connectivity run finishes
-#   
-#   # Create raster for row i of input table
-#   omniR <- paste0(
-#     "../Data/Spatial_data/Omniscape/",
-#     "radius",
-#     inputTable$Radius[x],
-#     "_resistance",
-#     inputTable$Resistance[x],
-#     "/output",
-#     inputTable$Year[x],
-#     "/cum_currmap.tif"
-#   ) %>%
-#     rast(.)
-#   
-#   # Set rast names
-#   names(omniR) <- paste0("radius", inputTable$Radius[x],
-#                          "_resistance", inputTable$Resistance[x],
-#                          "_year", inputTable$Year[x])
-#   return(omniR)
-#   
-# }) %>% rast(.)
-# 
-# # Aggregate to 1km
-# omniOutput1km <- terra::aggregate(omniOutput, fact = 40)
-# 
-# # Rescale
-# #omniOutput1km <- terra::scale(omniOutput1km)
-# 
-# # Save
-# writeRaster(omniOutput1km,
-#             "../Data/Spatial_data/Omniscape/omniConn_1km.tif",
-#             overwrite = TRUE) 
+# CREATE CONNECTIVITY TIFS --------------------------
+# Takes ~20 mins to run so save at end of section to only need to run once
+
+# Read input table
+inputTable <- read.table("../Data/Spatial_data/Omniscape/inputTable.txt",
+                         header = TRUE)
+
+omniOutput <- lapply (1:NROW(inputTable), function(x) { ####!!! Change this line when final connectivity run finishes
+
+  # Create raster for row i of input table
+  omniR <- paste0(
+    "../Data/Spatial_data/Omniscape/",
+    "radius",
+    inputTable$Radius[x],
+    "_resistance",
+    inputTable$Resistance[x],
+    "/output",
+    inputTable$Year[x],
+    "/cum_currmap.tif"
+  ) %>%
+    rast(.)
+
+  # Set rast names
+  names(omniR) <- paste0("radius", inputTable$Radius[x],
+                         "_resistance", inputTable$Resistance[x],
+                         "_year", inputTable$Year[x])
+  return(omniR)
+
+}) %>% rast(.)
+
+# Aggregate to 1km using median
+omniOutput1km <- terra::aggregate(omniOutput, fact = 40, fun = "median")
+
+# Save
+writeRaster(omniOutput1km,
+            "../Data/Spatial_data/Omniscape/omniConn_1km.tif",
+            overwrite = TRUE)
 
 # COMPARE LCM WITH OMNISCAPE OUTPUT --------------------------
 
-# load data
+# Load data
 omniOutput1km <- rast("../Data/Spatial_data/Omniscape/omniConn_1km.tif")
 
 # Create single data frame with LCM cover and Omniscape connectivityoutput
