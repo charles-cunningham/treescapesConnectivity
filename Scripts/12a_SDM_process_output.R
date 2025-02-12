@@ -45,7 +45,7 @@ for (i in taxaGroups) {
   
   # Set taxa group folder
   taxaDir <- paste0(dataDir, taxaGroup)
-  
+
   # List summary files
   allSummaryFiles <- list.files(taxaDir,
                                 full.names = TRUE,
@@ -80,7 +80,7 @@ for (j in 1:NROW(allSummaryFiles)) {
        value = TRUE) %>% 
     load(., envir = .GlobalEnv)
   
-  # Assign fised effects to list
+  # Assign fixed effects to list
   iSpeciesEffects$FixedEffects <- data.frame(modelSummary$inla$fixed)
   
   # Save list of species i as a sub-list of speciesEffects
@@ -150,6 +150,10 @@ meta_df <-
   pivot_wider(
     names_from = effect,
     values_from = c( "mean", "sd", "X0.025quant", "X0.975quant" ))
+
+# Remove any species with 0s for all mean and sd values (modelling error)
+meta_df <- meta_df %>%
+  filter(rowSums(abs(meta_df[c(3:34)])) > 0)
 
 # IDENTIFY WOODLAND AND CONNECTIVITY RELATIONSHIPS --------
 

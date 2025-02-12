@@ -22,7 +22,7 @@ library(wesanderson)
 ### RELOAD OBJECTS ---------------------------------------------------
 
 # List of brms objects
-brmsList <- c("connAll_brms", "connBF_brms", "connCF_brms", "connOpen_brms",
+brmsList <- c("connBF_brms", "connCF_brms", "connOpen_brms",
               "coverBF_brms", "coverCF_brms",
               "intBF_brms", "intCF_brms")
 
@@ -34,150 +34,154 @@ load(file = "../Data/Species_data/SDM_fixed_effect_summaries.RData")
 
 # CREATE INTERACTION PREDICTION DATAFRAME ------------------------------
 
-# # Load scaling parameters
-# load("../Data/Spatial_data/DataForInlabru/scalingParams.RData")
-# 
-# # Set number of prediction intervals
-# nSteps <- 100
-# 
-# ### Create unscaled prediction grid for broadleaf and coniferous woodland
-# 
-# # Load cover/connectivity spatRasters
-# for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
-#                      pattern =  "\\.tif$")) {
-# 
-#   assign(gsub(".tif", "", i),
-#          rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
-#                      i)))
-# }
-# 
-# # Create dataframes from spatRasters
-# coverBF_df <- coverBF %>%
-#   as.data.frame(.) %>%
-#   gather("Year", "Cover")
-# coverCF_df <- coverCF %>%
-#   as.data.frame(.) %>%
-#   gather("Year", "Cover")
-# connW_df <- connW %>%
-#   as.data.frame(.) %>%
-#   gather("Year", "Connectivity")
-# 
-# # Calculate max connectivity value
-# maxConnectivity <- max(connW_df$Connectivity)
-# 
-# # Create unscaled data frame of cover and connectivity values
-# # to predict over with 100 prediction steps over entire range
-# # (will be finding values within intervals so use nSteps +1)
-# BF_pred_df <-  expand.grid("BF_pred" = seq(0,
-#                                            1,
-#                                            length.out = nSteps + 1),
-#                            "conn_pred" = seq(0,
-#                                              maxConnectivity ,
-#                                              length.out = nSteps + 1))
-# CF_pred_df <-  expand.grid("CF_pred" = seq(0,
-#                                            1,
-#                                            length.out = nSteps + 1),
-#                            "conn_pred" = seq(0,
-#                                              maxConnectivity ,
-#                                              length.out = nSteps + 1))
-# 
-# ### Calculate frequency of grid cells,so that we can subset later to 
-# # only observed cover/connectivity combinations
-# 
-# # Create data frame of observed cover and connectivity data points
-# BF_data_pts <- data.frame("Cover" = coverBF_df$Cover,
-#                           "Connectivity" = connW_df$Connectivity)
-# CF_data_pts <- data.frame("Cover" = coverCF_df$Cover,
-#                           "Connectivity" = connW_df$Connectivity)
-# 
-# # Convert cover data points to prediction interval bin number...
-# BFcoverBins <- findInterval(BF_data_pts[, "Cover"],
-#                           unique(BF_pred_df[, "BF_pred" ]),
-#                           all.inside = TRUE) %>%
-#   # ... and use to create associated interval mid-points
-#   unique(BF_pred_df[, "BF_pred"] + 1/(nSteps*2))[.]
-# # Convert cover data points to prediction interval bin number...
-# CFcoverBins <- findInterval(CF_data_pts[, "Cover"],
-#                           unique(CF_pred_df[, "CF_pred" ]),
-#                           all.inside = TRUE) %>%
-#   # ...and use to create associated interval mid-point
-#   unique(CF_pred_df[, "CF_pred"] + 1/(nSteps*2))[.]
-# 
-# # Convert connectivity data points to prediction interval bin number...
-# connBins <- findInterval(BF_data_pts[,"Connectivity"],
-#                           unique(BF_pred_df[, "conn_pred"]),
-#                          all.inside = TRUE) %>%
-#   # ...and use to create associated interval mid-points
-#   unique(BF_pred_df[, "conn_pred"] + maxConnectivity/(nSteps*2))[.] # Can use BF as same number of rows
-# 
-# # Create a data frame of cross-occurrence of cover and connectivity bins
-# BFpredBins <- table("Cover" = BFcoverBins,
-#                     "Connectivity" = connBins) %>%
-#   as.data.frame %>%
-#   mutate_all(function(x) {as.numeric(as.character(x))} )
-# CFpredBins <- table("Cover" = CFcoverBins,
-#                     "Connectivity" = connBins) %>%
-#   as.data.frame %>%
-#   mutate_all(function(x) {as.numeric(as.character(x))} )
-# 
-# ### Scale covariates
-# 
-# # Scale the prediction steps for broadleaf and coniferous woodland separately, and connectivity
-# BFpredBins$coverScaled <- ( BFpredBins$Cover -
-#                                scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
-#   scalingParams[scalingParams$variable == "coverBF", "variableSD"]
-# CFpredBins$coverScaled <- ( CFpredBins$Cover -
-#                               scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
-#   scalingParams[scalingParams$variable == "coverCF", "variableSD"]
-# 
-# BFpredBins$connScaled <-
-#   (BFpredBins$Connectivity - scalingParams[scalingParams$variable == "connW", "variableMean"]) /
-#   scalingParams[scalingParams$variable == "connW", "variableSD"]
-# CFpredBins$connScaled <-
-#   (CFpredBins$Connectivity - scalingParams[scalingParams$variable == "connW", "variableMean"]) /
-#   scalingParams[scalingParams$variable == "connW", "variableSD"]
-# 
-# # Calculate scaled interaction terms for prediction
-# BFpredBins$coverConnInt <- BFpredBins$coverScaled * BFpredBins$connScaled
-# CFpredBins$coverConnInt <- CFpredBins$coverScaled * CFpredBins$connScaled
-# 
-# ### Calculate simplified prediction from coverScaled, connectivity, and their interaction
-# 
-# # Create empty columns to be populated
-# BFpredBins$mean <- BFpredBins$q0.05 <- BFpredBins$q0.95 <-
-#   CFpredBins$mean <- CFpredBins$q0.05 <- CFpredBins$q0.95 <- NA
-# 
-# # For each prediction combination...
-# for (i in 1:NROW(BFpredBins)) {
-# 
-#   # Calculate interaction effect draws from combining random draw effect posteriors
-#   # and scaled predication values
-#   predDraws <- BFpredBins$coverScaled[i] * spread_draws(coverBF_brms, b_Intercept)$b_Intercept +
-#     BFpredBins$connScaled[i] * spread_draws(connBF_brms, b_Intercept)$b_Intercept +
-#     BFpredBins$coverConnInt[i] * spread_draws(intBF_brms, b_Intercept)$b_Intercept
-# 
-#   # Take mean and quantiles
-#   BFpredBins$mean[i] <- mean( predDraws )
-#   BFpredBins$q0.05[i] <- quantile( predDraws, 0.05 )
-#   BFpredBins$q0.95[i] <- quantile( predDraws, 0.95 )
-# }
-# for (i in 1:NROW(CFpredBins)) {
-# 
-#   # Calculate interaction effect draws from combining random draw effect posteriors
-#   # and scaled predication values
-#   predDraws <- CFpredBins$coverScaled[i] * spread_draws(coverCF_brms, b_Intercept)$b_Intercept +
-#     CFpredBins$connScaled[i] * spread_draws(connCF_brms, b_Intercept)$b_Intercept +
-#     CFpredBins$coverConnInt[i] * spread_draws(intCF_brms, b_Intercept)$b_Intercept
-# 
-#   # Take mean and quantiles
-#   CFpredBins$mean[i] <- mean( predDraws )
-#   CFpredBins$q0.05[i] <- quantile( predDraws, 0.05 )
-#   CFpredBins$q0.95[i] <- quantile( predDraws, 0.95 )
-# }
-# 
-# # Save interaction prediction object
-# save(list = c("BFpredBins", "CFpredBins"),
-#      file = "../Data/Species_data/intPred.RData")
+# Load scaling parameters
+load("../Data/Spatial_data/DataForInlabru/scalingParams.RData")
+
+# Set number of prediction intervals
+nSteps <- 100
+
+### Create unscaled prediction grid for broadleaf and coniferous woodland
+
+# Load cover/connectivity spatRasters
+for (i in list.files("../Data/Spatial_data/DataForInlabru/spatRaster",
+                     pattern =  "\\.tif$")) {
+
+  assign(gsub(".tif", "", i),
+         rast(paste0("../Data/Spatial_data/DataForInlabru/spatRaster/",
+                     i)))
+}
+
+# Create dataframes from spatRasters
+coverBF_df <- coverBF %>%
+  as.data.frame(.) %>%
+  gather("Year", "Cover")
+coverCF_df <- coverCF %>%
+  as.data.frame(.) %>%
+  gather("Year", "Cover")
+connW_df <- connW %>%
+  as.data.frame(.) %>%
+  gather("Year", "Connectivity")
+
+# Calculate max connectivity value
+maxConnectivity <- max(connW_df$Connectivity)
+
+# Create unscaled data frame of cover and connectivity values
+# to predict over with 100 prediction steps over entire range
+# (will be finding values within intervals so use nSteps +1)
+BF_pred_df <-  expand.grid("BF_pred" = seq(0,
+                                           1,
+                                           length.out = nSteps + 1),
+                           "conn_pred" = seq(0,
+                                             maxConnectivity ,
+                                             length.out = nSteps + 1))
+CF_pred_df <-  expand.grid("CF_pred" = seq(0,
+                                           1,
+                                           length.out = nSteps + 1),
+                           "conn_pred" = seq(0,
+                                             maxConnectivity ,
+                                             length.out = nSteps + 1))
+
+### Calculate frequency of grid cells,so that we can subset later to
+# only observed cover/connectivity combinations
+
+# Create data frame of observed cover and connectivity data points
+BF_data_pts <- data.frame("Cover" = coverBF_df$Cover,
+                          "Connectivity" = connW_df$Connectivity)
+CF_data_pts <- data.frame("Cover" = coverCF_df$Cover,
+                          "Connectivity" = connW_df$Connectivity)
+
+# Convert cover data points to prediction interval bin number...
+BFcoverBins <- findInterval(BF_data_pts[, "Cover"],
+                          unique(BF_pred_df[, "BF_pred" ]),
+                          all.inside = TRUE) %>%
+  # ... and use to create associated interval mid-points
+  unique(BF_pred_df[, "BF_pred"] + 1/(nSteps*2))[.]
+# Convert cover data points to prediction interval bin number...
+CFcoverBins <- findInterval(CF_data_pts[, "Cover"],
+                          unique(CF_pred_df[, "CF_pred" ]),
+                          all.inside = TRUE) %>%
+  # ...and use to create associated interval mid-point
+  unique(CF_pred_df[, "CF_pred"] + 1/(nSteps*2))[.]
+
+# Convert connectivity data points to prediction interval bin number...
+connBins <- findInterval(BF_data_pts[,"Connectivity"],
+                          unique(BF_pred_df[, "conn_pred"]),
+                         all.inside = TRUE) %>%
+  # ...and use to create associated interval mid-points
+  unique(BF_pred_df[, "conn_pred"] + maxConnectivity/(nSteps*2))[.] # Can use BF as same number of rows
+
+# Create a data frame of cross-occurrence of cover and connectivity bins
+BFpredBins <- table("Cover" = BFcoverBins,
+                    "Connectivity" = connBins) %>%
+  as.data.frame %>%
+  mutate_all(function(x) {as.numeric(as.character(x))} )
+CFpredBins <- table("Cover" = CFcoverBins,
+                    "Connectivity" = connBins) %>%
+  as.data.frame %>%
+  mutate_all(function(x) {as.numeric(as.character(x))} )
+
+### Scale covariates
+
+# Scale the prediction steps for broadleaf and coniferous woodland separately, and connectivity
+BFpredBins$coverScaled <- ( BFpredBins$Cover -
+                               scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
+  scalingParams[scalingParams$variable == "coverBF", "variableSD"]
+CFpredBins$coverScaled <- ( CFpredBins$Cover -
+                              scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
+  scalingParams[scalingParams$variable == "coverCF", "variableSD"]
+
+BFpredBins$connScaled <-
+  (BFpredBins$Connectivity - scalingParams[scalingParams$variable == "connW", "variableMean"]) /
+  scalingParams[scalingParams$variable == "connW", "variableSD"]
+CFpredBins$connScaled <-
+  (CFpredBins$Connectivity - scalingParams[scalingParams$variable == "connW", "variableMean"]) /
+  scalingParams[scalingParams$variable == "connW", "variableSD"]
+
+# Calculate scaled interaction terms for prediction
+BFpredBins$coverConnInt <- BFpredBins$coverScaled * BFpredBins$connScaled
+CFpredBins$coverConnInt <- CFpredBins$coverScaled * CFpredBins$connScaled
+
+### Calculate simplified prediction from coverScaled, connectivity, and their interaction
+
+# Create empty columns to be populated
+BFpredBins$mean <- BFpredBins$q0.05 <- BFpredBins$q0.95 <-
+  CFpredBins$mean <- CFpredBins$q0.05 <- CFpredBins$q0.95 <- NA
+
+# Extract pooled draws from BF and CF brms models (speeds up doing only once)
+coverBF_pooled_draws <- spread_draws(coverBF_brms, b_Intercept)
+connBF_pooled_draws <- spread_draws(connBF_brms, b_Intercept)
+intBF_pooled_draws <- spread_draws(intBF_brms, b_Intercept)
+coverCF_pooled_draws <- spread_draws(coverCF_brms, b_Intercept)
+connCF_pooled_draws <- spread_draws(connCF_brms, b_Intercept)
+intCF_pooled_draws <- spread_draws(intCF_brms, b_Intercept)
+  
+# For each prediction combination
+# (same number of rows in BFpredBins and CFpredBins)
+for (i in 1:NROW(BFpredBins)) {
+
+  # Calculate interaction effect draws from combining random draw effect posteriors
+  # and scaled predication values
+  predDrawsBF <- BFpredBins$coverScaled[i] * coverBF_pooled_draws$b_Intercept +
+    BFpredBins$connScaled[i] * connBF_pooled_draws$b_Intercept +
+    BFpredBins$coverConnInt[i] * intBF_pooled_draws$b_Intercept
+
+  predDrawsCF <- CFpredBins$coverScaled[i] * coverCF_pooled_draws$b_Intercept +
+    CFpredBins$connScaled[i] * connCF_pooled_draws$b_Intercept +
+    CFpredBins$coverConnInt[i] * intCF_pooled_draws$b_Intercept
+
+  # Take mean and quantiles
+  BFpredBins$mean[i] <- mean( predDrawsBF )
+  BFpredBins$q0.05[i] <- quantile( predDrawsBF, 0.05 )
+  BFpredBins$q0.95[i] <- quantile( predDrawsBF, 0.95 )
+  
+  CFpredBins$mean[i] <- mean( predDrawsCF )
+  CFpredBins$q0.05[i] <- quantile( predDrawsCF, 0.05 )
+  CFpredBins$q0.95[i] <- quantile( predDrawsCF, 0.95 )
+}
+
+# Save interaction prediction object
+save(list = c("BFpredBins", "CFpredBins"),
+     file = "../Data/Species_data/intPred.RData")
 
 # LINE PLOT -----------------------------------------
 
@@ -240,62 +244,6 @@ for (i in c("BF", "CF")) {
          width = 5000,
          height = 5000)
 }
-
-# CALCULATE CONNECTIVITY OPPORTUNITY SPACE -----------------
-# N.B. Broadleaf-only
-# In order to identify area with highest potential for biodiversity gains
-# from increasing broadleaf-woodland connectivity, we need to identify where
-# the modelled interaction effect shows an occurrence increase from increasing
-# connectivity.
-# Hence here we identify the cover-connectivity space where the entire 
-# 95% credible interval shows increase in occurrence. We do this by looping through 
-# every cover value, and seeing where the occurrence maxima is for the connectivity values
-
-# Create dataframe of cover and connectivity space to populate with the opportunity plane
-oppSpace <- data.frame( cover = unique(BFpredBins$Cover),
-                        connectivity = NA)
-
-# For each row of oppSpace, find the connectivity value associated with each cover value
-# where the occurrence increase from connectivity stops
-for (i in 1:NROW(oppSpace)) {
-
-  # Filter all prediction bins to only oppSpace row i cover value
-  minModOcc <- BFpredBins %>%
-    filter(Cover == oppSpace[i, "cover"])
-  
-  # Extract 'lower credible interval' sign of change for each connectivity value,
-  # i.e. is connectivity increasing or decreasing from each value to next
-  signLowerQ <- minModOcc %>%
-    pull("q0.05") %>%
-    diff %>%
-    sign
-  
-  ### Assign connectivity value
-  
-  # No inflection:
-  # If occurrence value always increases for increasing connectivity lower quantile...
-  if(all(signLowerQ == 1)) {
-    # Assign max connectivity value (plus one for visualisation on grid)
-    oppSpace[i, "connectivity"] <- max(minModOcc$Connectivity) + 1
-    
-    # No inflection:
-    # If occurrence value is decreasing right from the start... 
-    } else if (signLowerQ[1] == -1) {
-      # Assign minimum connectivity value = 0
-      oppSpace[i, "connectivity"] <- 0
-      
-      # Inflection:
-      } else {
-        # Identify last value before increase switches to a decrease (local maxima)
-        oppSpace[i, "connectivity"] <- which(diff(signLowerQ) == -2) %>%
-          min %>% # ... and take the smallest value, just in case there are more than one
-          minModOcc[., "Connectivity"] # Extract associated predicted connectivity
-      }
-}
-
-# Save opportunity space
-saveRDS(oppSpace,
-        file ="../Data/Spatial_Data/opportunitySpaceBF.RDS")
 
 # TILE PLOTS ------------------------------------------
 
@@ -390,50 +338,6 @@ for (i in c("BF", "CF")) {
       xlab("Proportion coniferous woodland cover")
   }
 
-  # Add connectivity priority box and annotation for broadleaf
-  if (i == "BF") {
-    tilePlotPlusAnnotation <- tilePlot +
-      # Add main connectivity priority box
-      geom_line(data = oppSpace, aes(x = cover,
-                                     y = connectivity),
-                colour = "black",
-                linetype = 2,
-                linewidth = 1,
-                inherit.aes = FALSE) +
-      # Add connectivity box key
-      geom_rect(aes(xmin = 0.76,
-                    xmax = 0.80,
-                    ymin = 190,
-                    ymax = 200),
-                colour = "black",
-                fill = NA,
-                linetype = 2,
-                linewidth = 0.5) +
-      # Add key text
-      annotate("text",
-               x = 0.82, y = 195, size = 7,
-               label = "Connectivity\nopportunity space",
-               hjust = 0) +
-      # Add arrow
-      annotate("segment", x = 0, y = 0, xend = 0.32, yend = 120,
-               arrow = arrow(length = unit(0.05, "npc"))) +
-      # Add arrow text
-      annotate("text",
-               x = 0.26, y = 128, size = 6,
-               label = "Increasing occurrence of invertebrates\nassociated with broadleaf woodland",
-               angle = 42) +
-      # Adjust legend position
-      theme(legend.position = c(0.84,0.91)) +
-      guides(fill = guide_colourbar(title.position="right",
-                                    label.position = "left",
-                                    title.hjust = 0))
-
-    # Save object
-    saveRDS(tilePlotPlusAnnotation,
-            file = paste0("../Data/Species_Data/",
-                          "tilePlot", i, ".RDS"))
-  }
-  
   # Save
   ggsave(filename = paste0("../Writing/Plots/",
                            "tilePlot", i, ".png"),
@@ -587,4 +491,3 @@ for (i in c("BF", "CF")) {
          width = 6000,
          height = 5000)
 }
-

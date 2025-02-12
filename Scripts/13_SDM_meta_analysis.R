@@ -10,17 +10,17 @@
 # Change  library to C: (R: doesn't have enough space for packages):
 .libPaths("R:/rsrch/cb751/lab/Charles/R/PackageLibrary")
 
-# Run once for R 4.2.2 to get the brms package working
-# Install RTools 42
+# Run once for R 4.4.2 to get the brms package working (belt and braces)
+# Install RTools
 # remove.packages(c("StanHeaders", "rstan", "brms"))
 # if (file.exists(".RData")) file.remove(".RData")
 # RESTART R
 # install.packages("StanHeaders", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 # install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
 # options(mc.cores = parallel::detectCores())
-# rstan_options(auto_write = TRUE)
 # example(stan_model, package = "rstan", run.dontrun = TRUE) # This checks rstan and the C++ compiler are correctly installed
 # install.packages("brms")
+# rstan_options(auto_write = TRUE)
 # RESTART R
 
 # Load packages
@@ -64,64 +64,52 @@ ggsave(filename = paste0("../Writing/Plots/", "Raw_connectivity_effect_sizes.png
 # RUN BAYESIAN MODELS ---------------------------------
 
 # Fit Bayesian meta analysis model
-# N.B. Species effect nested within taxa effect.
+# N.B. Species effect nested within taxa effect
 # (i.e. taxa + taxa:species random effects)
 
 ### Connectivity
 
-# All species
-connAll_brms <- brm(data = meta_df,
-                    family = gaussian,
-                    mean_connectivity | se(sd_connectivity) ~ 1 + (1 | taxa ),
-                    prior = c(prior(normal(0, 1), class = Intercept),
-                        prior(cauchy(0, 0.5), class = sd)),
-                    iter = 10000,
-                    warmup = 5000, 
-                    control=list(adapt_delta = 0.99,
-                                 stepsize = 0.1,
-                                 max_treedepth = 15),
-                    cores = 4,
-                    chains = 4)
-
 # Broadleaf species only
 connBF_brms <- brm(data = meta_df[meta_df$broadleafAssociation == "Y", ],
                    family = gaussian,
-                   mean_connectivity | se(sd_connectivity) ~ 1 + (1 | taxa),
+                   mean_connectivity | se(sd_connectivity) ~
+                     1 + (1 | taxa) + (1 | taxa:species),
                     prior = c(prior(normal(0, 1), class = Intercept),
-                           prior(cauchy(0, 0.5), class = sd)),
+                           prior(cauchy(0, 1), class = sd)),
                    iter = 10000,
-                   warmup = 5000, 
-                   control=list(adapt_delta = 0.99,
-                                stepsize = 0.1,
-                                max_treedepth = 15),
+                   control=list(adapt_delta = 0.999,
+                                stepsize = 0.001,
+                                max_treedepth = 20),
                    cores = 4,
                    chains = 4)
 
 # Coniferous species only
 connCF_brms <- brm(data = meta_df[meta_df$coniferousAssociation == "Y", ],
                    family = gaussian,
-                   mean_connectivity | se(sd_connectivity) ~ 1 + (1 | taxa ),
+                   mean_connectivity | se(sd_connectivity) ~
+                     1 + (1 | taxa) + (1 | taxa:species),
                    prior = c(prior(normal(0, 1), class = Intercept),
-                             prior(cauchy(0, 0.5), class = sd)),
+                             prior(cauchy(0, 1), class = sd)),
                    iter = 10000,
                    warmup = 5000, 
-                   control=list(adapt_delta = 0.99,
-                                stepsize = 0.1,
-                                max_treedepth = 15),
+                   control=list(adapt_delta = 0.999,
+                                stepsize = 0.001,
+                                max_treedepth = 20),
                    cores = 4,
                    chains = 4)
 
 # Woodland avoiding species only
 connOpen_brms <- brm(data = meta_df[meta_df$openAssociation == "Y", ],
                      family = gaussian,
-                     mean_connectivity | se(sd_connectivity) ~ 1 + (1 | taxa ),
+                     mean_connectivity | se(sd_connectivity) ~
+                       1 + (1 | taxa) + (1 | taxa:species),
                      prior = c(prior(normal(0, 1), class = Intercept),
-                               prior(cauchy(0, 0.5), class = sd)),
+                               prior(cauchy(0, 1), class = sd)),
                      iter = 10000,
                      warmup = 5000, 
-                     control=list(adapt_delta = 0.99,
-                                  stepsize = 0.1,
-                                  max_treedepth = 15),
+                     control=list(adapt_delta = 0.999,
+                                  stepsize = 0.001,
+                                  max_treedepth = 20),
                      cores = 4,
                      chains = 4)
 
@@ -130,28 +118,30 @@ connOpen_brms <- brm(data = meta_df[meta_df$openAssociation == "Y", ],
 # Broadleaf species only
 coverBF_brms <- brm(data = meta_df[meta_df$broadleafAssociation == "Y", ],
                     family = gaussian,
-                    mean_coverBF | se(sd_coverBF) ~ 1 + (1 | taxa ),
+                    mean_coverBF | se(sd_coverBF) ~
+                      1 + (1 | taxa) + (1 | taxa:species),
                     prior = c(prior(normal(0, 1), class = Intercept),
-                            prior(cauchy(0, 0.5), class = sd)),
+                            prior(cauchy(0, 1), class = sd)),
                     iter = 10000,
                     warmup = 5000, 
-                    control=list(adapt_delta = 0.99,
-                                 stepsize = 0.1,
-                                 max_treedepth = 15),
+                    control=list(adapt_delta = 0.999,
+                                 stepsize = 0.001,
+                                 max_treedepth = 20),
                     cores = 4,
                     chains = 4)
 
 # Coniferous species only
 coverCF_brms <- brm(data = meta_df[meta_df$coniferousAssociation == "Y", ],
                      family = gaussian,
-                     mean_coverCF | se(sd_coverCF) ~ 1 + (1 | taxa ),
+                     mean_coverCF | se(sd_coverCF) ~
+                      1 + (1 | taxa) + (1 | taxa:species),
                      prior = c(prior(normal(0, 1), class = Intercept),
-                               prior(cauchy(0, 0.5), class = sd)),
+                               prior(cauchy(0, 1), class = sd)),
                     iter = 10000,
                     warmup = 5000, 
-                    control=list(adapt_delta = 0.99,
-                                 stepsize = 0.1,
-                                 max_treedepth = 15),
+                    control=list(adapt_delta = 0.999,
+                                 stepsize = 0.001,
+                                 max_treedepth = 20),
                     cores = 4,
                     chains = 4)
 
@@ -160,34 +150,36 @@ coverCF_brms <- brm(data = meta_df[meta_df$coniferousAssociation == "Y", ],
 # Woodland species only
 intBF_brms <- brm(data = meta_df[meta_df$broadleafAssociation == "Y", ],
                   family = gaussian,
-                  mean_BFconnINT | se(sd_BFconnINT) ~ 1 + (1 | taxa),
+                  mean_BFconnINT | se(sd_BFconnINT) ~
+                    1 + (1 | taxa) + (1 | taxa:species),
                   prior = c(prior(normal(0, 1), class = Intercept),
-                            prior(cauchy(0, 0.5), class = sd)),
+                            prior(cauchy(0, 1), class = sd)),
                   iter = 10000,
                   warmup = 5000, 
-                  control=list(adapt_delta = 0.99,
-                               stepsize = 0.1,
-                               max_treedepth = 15),
+                  control=list(adapt_delta = 0.999,
+                               stepsize = 0.001,
+                               max_treedepth = 20),
                   cores = 4,
                   chains = 4)
 # Woodland species only
 intCF_brms <- brm(data = meta_df[meta_df$coniferousAssociation == "Y", ],
-                        family = gaussian,
-                        mean_CFconnINT | se(sd_CFconnINT) ~ 1 + (1 | taxa ),
+                  family = gaussian,
+                  mean_CFconnINT | se(sd_CFconnINT) ~
+                    1 + (1 | taxa) + (1 | taxa:species),
                         prior = c(prior(normal(0, 1), class = Intercept),
-                                  prior(cauchy(0, 0.5), class = sd)),
+                                  prior(cauchy(0, 1), class = sd)),
                   iter = 10000,
                   warmup = 5000,
-                  control=list(adapt_delta = 0.99,
-                               stepsize = 0.1,
-                               max_treedepth = 15),
+                  control=list(adapt_delta = 0.999,
+                               stepsize = 0.001,
+                               max_treedepth = 20),
                   cores = 4,
                   chains = 4)
 
 ### Save
 
 # List of brms objects
-brmsList <- c("connAll_brms", "connBF_brms", "connCF_brms", "connOpen_brms",
+brmsList <- c("connBF_brms", "connCF_brms", "connOpen_brms",
               "coverBF_brms", "coverCF_brms",
               "intBF_brms", "intCF_brms")
 

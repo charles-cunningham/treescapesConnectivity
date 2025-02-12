@@ -5,9 +5,8 @@
 # 
 # Script Name: Inlabru spatio-temporal model script
 #
-# Script Description: Takes raw recording data set and processes, and then fits a 
-# SDM using inlabru. This version fits a spatio-temporal model with relative
-# occurrence probability as the response using a visits data structure.
+# Script Description: Same as script 11a, but subsets sample area to 
+# broadleaf cover below 30%.
 #
 # R version 4.3.2 (2023-10-31) -- "Eye Holes"
 # Copyright (C) 2023 The R Foundation for Statistical Computing
@@ -99,19 +98,19 @@ load("Treescapes/ST_SDMs/Data/DataForInlabru/scalingParams.RData")
 # SpatRasters
 for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatRaster",
                      pattern =  "\\.tif$")) {
- 
+  
   assign(gsub(".tif", "", i),
          rast(paste0("Treescapes/ST_SDMs/Data/DataForInlabru/spatRaster/",
-                                i))) 
+                     i))) 
 }
 
 # SpatVectors
 for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector",
                      pattern =  "\\.shp$")) {
- 
+  
   assign(gsub(".shp", "", i),
          vect(paste0("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector/",
-                                i)))
+                     i)))
 }
 
 ### Download BNG WKT string
@@ -119,7 +118,7 @@ for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector",
 # different tasks tring to read/write at same time 
 
 # Specify temporary file to download 'bng' CRS wkt to
-tempFile <- paste0("Treescapes/ST_SDMs/Data/",batchN, "bng.prj")
+tempFile <- paste0("Treescapes/ST_SDMs/Data/",taxaGroup, batchN, "bng.prj")
 
 # Download file
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -338,7 +337,7 @@ unique(taxaData$taxon) %>%
 
 # Print for run log
 paste0("Species: ", iSpecies,
-      ", batchN: ", batchN) %>%
+       ", batchN: ", batchN) %>%
   print
 
 # Set filename-friendly species name
@@ -459,23 +458,47 @@ visitDataSpatial <- visitDataSpatial %>%
   dplyr::select(-1) %>%
   cbind(visitDataSpatial, .)
 
+# FILTER DATA TO OVER 30% -------------------------------------
+
+# Find cells below 30% broadleaf woodland cover (1990)
+below30_R <- ifel(coverBF$BF_1990 < 0.3,
+                     1,
+                     NA)
+
+# Create polygon version of quantCells
+below30_V <- as.polygons(below30_R)
+
+# Mask visit data to cells that fall within broadelaf cover bracket
+visitDataBelow30 <- mask(visitDataSpatial, below30_V)
+  
+# Mask other data to cells that fall within broadelaf cover bracket
+for (i in c( "GDD5_grp", "WMIN_grp", "tasCV_grp", "RAIN_grp", "soilM_grp",
+             "coverBF_scaled", "coverCF_scaled", 
+             "coverBF_connW", "coverCF_connW", "connW_scaled")) {
+  
+  assign(paste0(i, "_below30"), mask(get(i), below30_R))
+  
+  }
+
 # EXTRACT COVARIATES FOR EFFECTS PLOT -------------------------------
 # Need to extract spatial covariates over species records for plots
 
 ### Create data frame of covariate values at visit locations
 
 # Create a base data frame with iYear, presence and week (non-spatial) to build up from
-covarValues <- dplyr::select(as.data.frame(visitDataSpatial), iYear, presence, week)
+covarValues <- dplyr::select(as.data.frame(visitDataBelow30), iYear, presence, week)
 
 # Loop through spatial (random) variables
-for (i in c( "GDD5_grp", "WMIN_grp", "tasCV_grp", "RAIN_grp", "soilM_grp",
-             "coverBF_scaled", "coverCF_scaled", "connW_scaled")) {
-
+for (i in c( "GDD5_grp_below30", "WMIN_grp_below30", "tasCV_grp_below30", 
+             "RAIN_grp_below30", "soilM_grp_below30",
+             "coverBF_scaled_below30", "coverCF_scaled_below30", 
+             "connW_scaled_below30")) {
+  
   # Get covariate i spatRaster (each layer is for time period iYear)
   cov_R <- get(i)
   
   # Extract values for all iYear layers and add to beginning of data frame using species records
-  covarValues <- terra::extract(cov_R, visitDataSpatial, ID = FALSE) %>%
+  covarValues <- terra::extract(cov_R, visitDataBelow30, ID = FALSE) %>%
     cbind(covarValues) # Add existing data frame onto end
   
   # Calculate correct covariate for iYear for each value
@@ -518,11 +541,11 @@ gc()
 maxEdge <- estimated_range/5
 
 # Find record locations to build mesh from
-recordCoords <- crds(visitDataSpatial) %>% 
+recordCoords <- crds(visitDataBelow30) %>% 
   unique(.)
 
 # Create mesh (convert boundary to sp object as leads to best convergence)
-mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK) %>% as("Spatial"),
+mesh <- inla.mesh.2d(boundary = st_as_sf(below30_V) %>% as("Spatial"),
                      loc = recordCoords,
                      max.edge = c(1,5) * maxEdge,
                      offset = c(1,2) * maxEdge, 
@@ -533,7 +556,7 @@ mesh <- inla.mesh.2d(boundary = st_as_sf(smoothUK) %>% as("Spatial"),
 # FIT SPATIO-TEMPORAL MODEL ---------------------------------
 
 # Create indices
-iYear <- visitDataSpatial$iYear
+iYear <- visitDataBelow30$iYear
 nYear <- length(unique(iYear))
 
 # Define spatial SPDE priors
@@ -548,51 +571,51 @@ fixedHyper <- list( mean = 0,
 
 # Priors for random effects
 randomHyper <- list(theta = list(prior="pc.prec",
-                               param=c(0.5, 0.01)))
+                                 param=c(0.5, 0.01)))
 ar1Hyper <- list(rho = list(prior="pc.prec",
                             param=c(0.5, 0.01)))
 
 # Set components
 inlabruCmp  <-  presence ~ 0 + Intercept(1) +
   
-  GDD5(main = GDD5_grp,
+  GDD5(main = GDD5_grp_below30,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  WMIN(main = WMIN_grp,
+  WMIN(main = WMIN_grp_below30,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  tasCV(main = tasCV_grp,
+  tasCV(main = tasCV_grp_below30,
         main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
         hyper = randomHyper) +
-  RAIN(main = RAIN_grp,
+  RAIN(main = RAIN_grp_below30,
        main_layer = iYear,
        model = "rw2",
        scale.model = TRUE,
        hyper = randomHyper) +
-  soilM(main = soilM_grp,
+  soilM(main = soilM_grp_below30,
         main_layer = iYear,
         model = "rw2",
         scale.model = TRUE,
         hyper = randomHyper) +
-  coverBF(main = coverBF_scaled,
+  coverBF(main = coverBF_scaled_below30,
           main_layer = iYear,
           model = "linear") +
-  coverCF(main = coverCF_scaled,
+  coverCF(main = coverCF_scaled_below30,
           main_layer = iYear,
           model = "linear") +
-  connectivity(main = connW_scaled,
+  connectivity(main = connW_scaled_below30,
                main_layer = iYear,
                model = "linear") +
-  BFconnINT(main = coverBF_connW,
+  BFconnINT(main = coverBF_connW_below30,
             main_layer = iYear,
             model = "linear") +
-  CFconnINT(main = coverCF_connW,
+  CFconnINT(main = coverCF_connW_below30,
             main_layer = iYear,
             model = "linear") +
   visitLengthShort(main = visitLengthShort,
@@ -614,7 +637,7 @@ inlabruCmp  <-  presence ~ 0 + Intercept(1) +
 model <- bru(components = inlabruCmp,
              family = "binomial",
              control.family = list(link = "cloglog"),
-             data = st_as_sf(visitDataSpatial),
+             data = st_as_sf(visitDataBelow30),
              options=list(control.fixed = fixedHyper,
                           control.inla= list(int.strategy='eb'),
                           control.compute = list(waic = TRUE, dic = FALSE, cpo = TRUE),
@@ -626,7 +649,7 @@ modelSummary <- summary(model); modelSummary
 # PREDICT -----------------------------------------
 
 # Create grid prediction pixels
-ppxl <- mask(UK_R, smoothUK) %>%
+ppxl <- mask(below30_R, smoothUK) %>%
   crop(.,smoothUK ) %>%
   as.points %>%
   st_as_sf
@@ -639,21 +662,21 @@ ppxlAll <- fm_cprod(ppxl, data.frame( iYear = seq_len(nYear)))
 modelPred <- predict(model, 
                      ppxlAll, 
                      ~ data.frame(
-                                  iYear = iYear,
-                                  lambda =  1 - exp( -exp( spaceTime + # cloglog back transform
-                                                             soilM +
-                                                             WMIN +
-                                                             tasCV +
-                                                             GDD5 +
-                                                             RAIN +
-                                                             coverBF +
-                                                             coverCF +
-                                                             connectivity +
-                                                             BFconnINT +
-                                                             CFconnINT +
-                                                             # Max value for week to predict over (removed later)
-                                                             max(model$summary.random$week$mean) + 
-                                                             Intercept ))),
+                       iYear = iYear,
+                       lambda =  1 - exp( -exp( spaceTime + # cloglog back transform
+                                                  soilM +
+                                                  WMIN +
+                                                  tasCV +
+                                                  GDD5 +
+                                                  RAIN +
+                                                  coverBF +
+                                                  coverCF +
+                                                  connectivity +
+                                                  BFconnINT +
+                                                  CFconnINT +
+                                                  # Max value for week to predict over (removed later)
+                                                  max(model$summary.random$week$mean) + 
+                                                  Intercept ))),
                      exclude = c("week")) 
 
 # MODEL EVALUATION --------------------------
@@ -855,9 +878,9 @@ covplot <- plot(spde.posterior(model, "spaceTime", what = "matern.covariance")) 
 median_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "median"],
                            template = template_R,
                            options = c("a_nodata = NA")),
-            st_rasterize(modelPred[modelPred$iYear == "2", "median"],
-                         template = template_R,
-                         options = c("a_nodata = NA"))) %>%
+              st_rasterize(modelPred[modelPred$iYear == "2", "median"],
+                           template = template_R,
+                           options = c("a_nodata = NA"))) %>%
   rast
 
 # Add names, i.e. iYear
@@ -895,9 +918,9 @@ predMedian <- ggplot(data = median_df) +
 sd_R <- c(st_rasterize(modelPred[modelPred$iYear == "1", "sd"],
                        template = template_R,
                        options = c("a_nodata = NA")),
-            st_rasterize(modelPred[modelPred$iYear == "2", "sd"],
-                         template = template_R,
-                         options = c("a_nodata = NA"))) %>%
+          st_rasterize(modelPred[modelPred$iYear == "2", "sd"],
+                       template = template_R,
+                       options = c("a_nodata = NA"))) %>%
   rast
 
 # Add names, i.e. iYear
@@ -994,11 +1017,11 @@ CF_pred_df <- expand.grid(CF_pred = seq(0, 1, by = 1/nSamp),
 # Scale the prediction steps for broadleaf and coniferous woodland separately, and connectivity
 # N.B. Have to name columns the same as the original datasets!
 BF_pred_df$coverBF_scaled <- ( BF_pred_df$BF_pred - 
-                               scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
+                                 scalingParams[scalingParams$variable == "coverBF", "variableMean"] ) /
   scalingParams[scalingParams$variable == "coverBF", "variableSD"]
 
 CF_pred_df$coverCF_scaled <- ( CF_pred_df$CF_pred - 
-                               scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
+                                 scalingParams[scalingParams$variable == "coverCF", "variableMean"] ) /
   scalingParams[scalingParams$variable == "coverCF", "variableSD"]
 
 BF_pred_df$connW_scaled <- CF_pred_df$connW_scaled <- # N.B. Connectivity is the same for both cover types
@@ -1127,15 +1150,15 @@ intPlot <- ggplot(allPred, aes(x = cover_pred, y = conn_pred, z = median)) +
 ### JOINT EVALUATION PLOT
 
 evalPlot <- arrangeGrob(predMedian, predSD ,
-             fixedEffPlot, intPlot ,
-             randomEffPlot, spaceTimePlot,
-             nrow = 3, ncol = 4,
-             widths=c(1, 1, 1, 3), 
-             layout_matrix = rbind(c(1, 1, 1, 2),
-                                   c(3, 3, 4, 4),
-                                   c(5, 5, 5, 6)),
-             top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
-                                  gp = grid::gpar(fontsize=20)))
+                        fixedEffPlot, intPlot ,
+                        randomEffPlot, spaceTimePlot,
+                        nrow = 3, ncol = 4,
+                        widths=c(1, 1, 1, 3), 
+                        layout_matrix = rbind(c(1, 1, 1, 2),
+                                              c(3, 3, 4, 4),
+                                              c(5, 5, 5, 6)),
+                        top = grid::textGrob(paste0(iSpecies, ", logCPO = ", logCPO),
+                                             gp = grid::gpar(fontsize=20)))
 
 # Compose matern plot
 spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
@@ -1144,7 +1167,7 @@ spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
 # SAVE -----------------------------------------
 
 # Define species directory
-iSpeciesDir <- paste0("Treescapes/ST_SDMs/Output/", 
+iSpeciesDir <- paste0("Treescapes/ST_SDMs/Output/Supplementary_below30_analysis/", 
                       taxaGroup, "/", 
                       iSpeciesTidy)
 

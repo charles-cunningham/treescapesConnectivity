@@ -24,7 +24,7 @@ library(wesanderson)
 ### RELOAD OBJECTS ---------------------------------------------------
 
 # List of brms objects
-brmsList <- c("connAll_brms", "connBF_brms", "connCF_brms", "connOpen_brms",
+brmsList <- c("connBF_brms", "connCF_brms", "connOpen_brms",
               "coverBF_brms", "coverCF_brms",
               "intBF_brms", "intCF_brms")
 
@@ -216,9 +216,7 @@ for (i in brmsList) {
   iBrmsSummary <- get(paste0(i, "_drawsSummary"))
   
   # Set x label, and x position for taxa silhouettes for each brms run
-  if (i == "connAll_brms") {
-    xLabel <- "Connectivity effect estimate"
-  } else if (i == "connBF_brms") {
+  if (i == "connBF_brms") {
     xLabel <- "Connectivity effect estimate"
   } else if (i == "connCF_brms") {
     xLabel <- "Connectivity effect estimate"
@@ -296,7 +294,7 @@ for (i in brmsList) {
 # PLOT POOLED ESTIMATES AND INDIVIDUAL SPECIES EFFECTS -------------------------
 
 # Loop through meta analysis subsets
-for (i in c( "connAll_brms", "connBF_brms", "connCF_brms", "connOpen_brms" )) {
+for (i in c( "connBF_brms", "connCF_brms", "connOpen_brms" )) {
 
   # Assign brms object
   iBrms <- get(i)
@@ -343,21 +341,10 @@ taxaSummaries <- ggplot(data = iBrmsDraws,
         axis.title.x = element_text(size = 18),
         plot.title = element_text(size = 22, hjust = -0.4, vjust =-0.2))
 
-# Also need to set x limits only for broadleaf connectivity plot as mayflies have 
-# extremely wide distribution which makes plot unbalanced
-if (i == "connBF_brms") {
-  taxaSummaries <- taxaSummaries +
-    xlim(-0.45, 0.35)
-}
-
 ### BAR PLOT 
 
 # Set relevant data frame, and x position for taxa silhouettes
-if(i == "connAll_brms") { # If all species, then don't subset
-  barData <- summary_all_df
-  phyloX <- 1200
-  # If broadleaf species, subset to broadleaf species
-  } else if (i == "connBF_brms") { 
+if(i == "connBF_brms") { 
    barData <- subset(summary_all_df,
                      broadleafAssociation == "Y")
    phyloX <- 460
@@ -370,7 +357,7 @@ if(i == "connAll_brms") { # If all species, then don't subset
    } else if (i == "connOpen_brms"){ 
      barData <- subset(summary_all_df,
                        openAssociation == "Y")
-     phyloX <- 40
+     phyloX <- 62.5
    }
 
 # Create bar plot

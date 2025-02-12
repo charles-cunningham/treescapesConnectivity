@@ -65,55 +65,55 @@ summarise(group_df, length(species))
 
 # Create raster for sum of every pooled group
 
-# # Loop through every group in group_df
-# groupSumsR <- lapply(1:NROW(group_keys(group_df)) , function(i) {
-# 
-#   # Split group into separate df, get df i...
-#   iGroup <- group_split(group_df)[[i]] %>%
-#     dplyr::select(species, taxa) #... and select taxa and species
-# 
-#   # Create list of file names of occurrence plots
-#   # for every row in iGroup
-#   iGroupFiles <- apply(iGroup, 1, function(j) {
-#     paste0("../Data/Species_data/SDMs/",
-#            j["taxa"],
-#            "/",
-#            j["species"],
-#            "/medianPred.tif")
-#   })
-# 
-#   # Create spatRast (select second layer of each prediction [current])
-#   iGroupRast <- lapply(iGroupFiles,
-#                        function(x) { rast(x, lyrs = 2) }) %>%
-#     rast
-# 
-#   # Sum
-#   iGroupSum <- sum(iGroupRast)
-# 
-#   # Convert projection back from km to m
-#   iGroupSum <- project(iGroupSum, bng)
-# 
-#   # Change spatRast layer name to group key
-#   names(iGroupSum) <- group_keys(group_df)[i, ] %>%
-#     as.character  %>%
-#     paste(., collapse = " ")
-# 
-#   return(iGroupSum)
-# 
-#   # Join all group sum spatRasts into single spatRast
-# }) %>% rast(.)
-# 
-# # Calculate mean
-# groupMeansR <- groupSumsR /
-#   sapply(group_split(group_df), NROW)
-# 
-# # Save
-# writeRaster(groupSumsR,
-#             "../Data/Species_data/Summed_occurrence_grouped_by_effects.tif",
-#             overwrite = TRUE)
-# writeRaster(groupMeansR,
-#             "../Data/Species_data/Mean_occurrence_grouped_by_effects.tif",
-#             overwrite = TRUE)
+# Loop through every group in group_df
+groupSumsR <- lapply(1:NROW(group_keys(group_df)) , function(i) {
+
+  # Split group into separate df, get df i...
+  iGroup <- group_split(group_df)[[i]] %>%
+    dplyr::select(species, taxa) #... and select taxa and species
+
+  # Create list of file names of occurrence plots
+  # for every row in iGroup
+  iGroupFiles <- apply(iGroup, 1, function(j) {
+    paste0("../Data/Species_data/SDMs/",
+           j["taxa"],
+           "/",
+           j["species"],
+           "/medianPred.tif")
+  })
+
+  # Create spatRast (select second layer of each prediction [current])
+  iGroupRast <- lapply(iGroupFiles,
+                       function(x) { rast(x, lyrs = 2) }) %>%
+    rast
+
+  # Sum
+  iGroupSum <- sum(iGroupRast)
+
+  # Convert projection back from km to m
+  iGroupSum <- project(iGroupSum, bng)
+
+  # Change spatRast layer name to group key
+  names(iGroupSum) <- group_keys(group_df)[i, ] %>%
+    as.character  %>%
+    paste(., collapse = " ")
+
+  return(iGroupSum)
+
+  # Join all group sum spatRasts into single spatRast
+}) %>% rast(.)
+
+# Calculate mean
+groupMeansR <- groupSumsR /
+  sapply(group_split(group_df), NROW)
+
+# Save
+writeRaster(groupSumsR,
+            "../Data/Species_data/Summed_occurrence_grouped_by_effects.tif",
+            overwrite = TRUE)
+writeRaster(groupMeansR,
+            "../Data/Species_data/Mean_occurrence_grouped_by_effects.tif",
+            overwrite = TRUE)
 
 # PLOT RICHNESS MAPS ----------------------------------------------------------
 
@@ -195,7 +195,7 @@ for(i in 1:nlyr(groupMeansR)) {
          height = 8000)
 }
 
-# PRIORITY MAP ---------------------------------------------
+# AGGREGATE MAP ---------------------------------------------
 
 ### PROCESS SPATIAL DATA
 
@@ -211,65 +211,12 @@ connW <- project (connW[["conn_2015"]],
                         st_crs(groupSumsR)$proj4string ))
 crs(connW) <- crs(groupMeansR)
 
-### IDENTIFY PRIORITY CELLS
-
-#What are priority landscapes for improving connectivity? 
-# Based on previous plot from script 15, 
-# they are landscapes to the left of the connectivity 
-# opportunity space line (oppSpace). We can use this to idenitify
-# real 1x1km cells within this cover-connectivity space for plot.
-
-# Create polygon object from 'cover-connectivity space' line
-oppPoly <- oppSpace %>%
-  rbind(c(0,0)) %>% # Add 1st additional "point" to create polygon
-  rbind(c(0, max(oppSpace$connectivity))) %>% # Add 2nd additional "point"
-  st_as_sf(coords = c("cover", "connectivity")) %>%  # Convert to sf points object
-  summarise(geometry = st_combine(geometry)) %>% # Create multipoint object 
-  st_cast("POLYGON") # Create polygon
-
-# Convert the cover and connectivity spatRast into a single dataframe,
-# and then convert to points in 'cover-connectivity space'
-covConnPoints <- c(coverBF, connW) %>% 
-  as.data.frame %>%
-  st_as_sf( coords = c("BF_2015" , "conn_2015"))
-
-# Identify points within opportunity space (use oppPoly to filter covConnPoints)
-oppPoints <- lengths(st_intersects(covConnPoints, oppPoly)) > 0
-
-# Make new data frame is x-y space, using oppPoints to identify priority cells
-priorityData <- c(coverBF, connW) %>%
-  as.data.frame(., xy = TRUE) %>%
-  add_column(priority = oppPoints)
-
-### CREATE DATA FRAME
-
 # Convert occurrence data to data frame (broadleaf species richness)
 occ_df <- names(groupSumsR) %>% 
   grep("Y ", .) %>%
   groupSumsR[[.]] %>%
   sum %>%
   as.data.frame(., xy = TRUE)
-
-# Create bivariate data frame
-bivariate_df <- full_join(occ_df,
-                          priorityData[,c("x" ,"y","priority")]) %>%
-  na.omit
-
-# Change names (no spaces, intuitive)
-names(bivariate_df) <- c("x", "y", "Occurrence", "Priority")
-  
-# Create 3 quantile buckets for occurrence
-quantilesOcc <- bivariate_df %>%
-  pull(Occurrence) %>%
-  quantile(probs = 0:3/3, na.rm = TRUE)
-
-# Cut into groups
-bivariate_df <- bivariate_df %>%
-  mutate(Occ_quantiles = cut(Occurrence, # based on quantiles
-                             breaks = quantilesOcc,
-                             include.lowest = TRUE) %>% 
-           as.numeric) %>%
-  mutate(plotValues = if_else(Priority == FALSE, 0, Occ_quantiles))
 
 ### PLOT
 
@@ -304,73 +251,18 @@ richnessMap <- ggplot(data = occ_df) +
         legend.text = element_text(size = 16),
         legend.title = element_text(size = 16))
 
-# Create priority map
-priorityMap <- ggplot(data = bivariate_df) +
-  
-  # Add raster data
-  geom_tile(aes( x = x, y = y,
-    fill = as.factor(plotValues),
-    colour = as.factor(plotValues))) +
-  coord_fixed() +
-  
-  # Set colours
-  scale_fill_manual(aesthetics = c("fill", "colour"),
-                    "",
-                    breaks = c(3,2,1,0),
-                    values = c("#31a354", "#addd8e", "#ffffcc","black"),
-                    labels = c(
-                      "Connectivity opportunity with high occurrence -\nprioritise resilience within landscape",
-                      "Connectivity opportunity -\nbalance colonisation and resilience",
-                      "Connectivity opportunity with low occurrence - \nlocate new woodland creation to boost colonisation",
-                      "Outside connectivity opportunity space\n(high existing cover/connectivity)")) +
-  
-  # Add dotted lines around priority areas
-  guides(color = guide_legend(override.aes = list(linetype = c(2, 2, 2, 0),
-                                                  colour = "black",
-                                                  linewidth = 0.5))) +
-  
-  # Add country boundaries
-  geom_sf(data = sf::st_as_sf(UK),
-          fill = "NA",
-          colour = "black",
-          inherit.aes = FALSE) +
-  geom_sf(data = sf::st_as_sf(Ireland),
-          fill = "NA",
-          colour = "black",
-          inherit.aes = FALSE) +
-  geom_sf(data = sf::st_as_sf(IsleOfMan),
-          fill = "NA",
-          colour = "black",
-          inherit.aes = FALSE) +
-  
-  theme_void()+
-  theme(legend.position = c(0.3,0.9),
-        legend.text = element_text(size = 16))
-
-# Adjust tile plot for multi-pane plot
-tilePlot <- tilePlot +
-  theme(text = element_text(size = 20))
-
-# Add everything together!
-bivarPlot <- cowplot::ggdraw(clip = "on") +
-  cowplot::draw_plot(tilePlot, 0, 0.55, 1, 0.45) +
-  cowplot::draw_plot(richnessMap, 0, 0, 0.5, 0.55, vjust = 0.05) +
-  cowplot::draw_plot(priorityMap, 0.5, 0, 0.5, 0.55, vjust = 0.05) +
-  cowplot::draw_label("(a)", 0.015, 0.995, size = 22) +
-  cowplot::draw_label("(b)", 0.015, 0.525, size = 22) +
-  cowplot::draw_label("(c)", 0.515, 0.525, size = 22) +
-  theme(plot.background = element_rect( fill = "white", colour = "white"))
-  
 # Save
-ggsave(filename = paste0("../Writing/Plots/", "PrioritiesPlot.png"),
-       bivarPlot,
+ggsave(filename = paste0("../Writing/Plots/", "RichnessPlot.png"),
+       richnessMap,
        dpi = 600,
-       units = "px", width = 8000, height = 11000)
+       units = "px", width = 4000, height = 6000)
 
 # DATA SUMMARIES ----------------------------------------------------------
 
-# Proportion of converged models which are broadleaf-associated species
+# Proportion of converged models which are broadleaf- coniferous- ans open-associated species
 NROW(subset(meta_df,broadleafAssociation == "Y")) / NROW(meta_df) * 100
+NROW(subset(meta_df, coniferousAssociation == "Y")) / NROW(meta_df) * 100
+NROW(subset(meta_df, openAssociation == "Y")) / NROW(meta_df) * 100
 
 # Proportion of broadleaf-associated species which have positive/negative/no connectivity effect
 NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Pos")) / 
@@ -379,13 +271,6 @@ NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Neg")) /
   NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
 NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "NS")) / 
   NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-
-# Percentage UK land which is within opportunity space
-sum(bivariate_df$Priority == TRUE) / NROW(bivariate_df) * 100
-
-# Percentage UK land which is within opportunity space and top third quantile, and bottom third
-sum(bivariate_df$plotValues == 3) / NROW(bivariate_df) * 100
-sum(bivariate_df$plotValues == 1) / NROW(bivariate_df) * 100
 
 # Proportion of species with positive/negative/no cover:connectivity interaction effect
 NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT > 0 & X0.975quant_BFconnINT > 0)) / 
