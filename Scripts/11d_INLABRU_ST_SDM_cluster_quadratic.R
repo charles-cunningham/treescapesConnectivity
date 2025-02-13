@@ -1016,10 +1016,6 @@ if (!dir.exists(iSpeciesDir)) {
 
 ### Save objects
 
-# Model
-save(model,
-     file = paste0(iSpeciesDir,
-                   "/modelFit.RData"))
 # Model summary
 save(modelSummary,
      file = paste0(iSpeciesDir,

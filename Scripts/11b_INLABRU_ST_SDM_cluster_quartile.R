@@ -1017,7 +1017,7 @@ spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
 # SAVE -----------------------------------------
 
 # Define species directory
-iSpeciesDir <- paste0("Treescapes/ST_SDMs/Output/Supplementary_quantile_analysis/", 
+iSpeciesDir <- paste0("Treescapes/ST_SDMs/Output/Supplementary_quartile_analysis/", 
                       coverBin,
                       "_percent_cover_quartile/",
                       taxaGroup,
@@ -1033,10 +1033,6 @@ if (!dir.exists(iSpeciesDir)) {
 
 ### Save objects
 
-# Model
-save(model,
-     file = paste0(iSpeciesDir,
-                   "/modelFit.RData"))
 # Model summary
 save(modelSummary,
      file = paste0(iSpeciesDir,
