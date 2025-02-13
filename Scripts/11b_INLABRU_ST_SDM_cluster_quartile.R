@@ -494,7 +494,7 @@ quantCells_R <- ifel(coverBF$BF_1990 >= quantLimits[1] &
 # Create polygon version of quantCells
 quantCells_V <- as.polygons(quantCells_R)
 
-# Mask visit data to cells that fall within broadelaf cover bracket
+# Mask visit data to cells that fall within broadleaf cover bracket
 visitDataQuant <- mask(visitDataSpatial, quantCells_V)
 
 # Mask other data to cells that fall within broadelaf cover bracket
@@ -661,7 +661,7 @@ modelSummary <- summary(model); modelSummary
 
 # Create grid prediction pixels
 ppxl <- mask(quantCells_R, smoothUK) %>%
-  crop(.,smoothUK )
+  crop(.,smoothUK ) %>%
   as.points %>%
   st_as_sf
 
@@ -1018,10 +1018,10 @@ spdeAndMaternPlot <- arrangeGrob(range.plot, covplot,
 
 # Define species directory
 iSpeciesDir <- paste0("Treescapes/ST_SDMs/Output/Supplementary_quantile_analysis/", 
-                      taxaGroup,
-                      "/",
                       coverBin,
-                      "_percent_cover_quantile/", 
+                      "_percent_cover_quartile/",
+                      taxaGroup,
+                      "/", 
                       iSpeciesTidy)
 
 # Create species directory
