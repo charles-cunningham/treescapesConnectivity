@@ -656,7 +656,7 @@ modelPred <- predict(model,
                                                   coverCF +
                                                   connectivity +
                                                   coverBF_quad +
-                                                  coverCF_quad
+                                                  coverCF_quad +
                                                   BFconnINT +
                                                   CFconnINT +
                                                   # Max value for week to predict over (removed later)
