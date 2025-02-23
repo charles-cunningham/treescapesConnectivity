@@ -25,7 +25,6 @@
 
 # Load packages
 library(brms)
-library(terra)
 library(tidyverse)
 library(tidybayes)
 library(ggridges)

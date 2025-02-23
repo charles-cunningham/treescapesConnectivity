@@ -14,7 +14,6 @@
 
 # Load packages
 library(brms)
-library(terra)
 library(tidyverse)
 library(tidybayes)
 library(ggridges)
@@ -49,7 +48,6 @@ taxaGroupLabels <- c( "Butterflies", "Caddisflies", "Ground beetles",
                       "Hoverflies","Ladybirds", "Molluscs",
                       "Moths", "Dragonflies", "Crickets/Grasshoppers",
                       "Shieldbugs", "Soldierflies", "Spiders")
-
 
 # Set taxa group labels
 taxaGroupLabels<- c( "Butterflies" = "Butterflies",

@@ -16,7 +16,6 @@
 library(INLA)
 library(inlabru)
 library(tidyverse)
-library(terra)
 
 # SET PARAMETERS ------------------------------------
 
