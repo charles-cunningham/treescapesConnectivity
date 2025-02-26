@@ -50,7 +50,7 @@ taxaGroupLabels <- c( "Butterflies", "Caddisflies", "Ground beetles",
                       "Shieldbugs", "Soldierflies", "Spiders")
 
 # Set taxa group labels
-taxaGroupLabels<- c( "Butterflies" = "Butterflies",
+taxaGroupLabels <- c( "Butterflies" = "Butterflies",
                      "Caddisflies" = "Caddisflies",
                      "Carabids" = "Ground beetles",
                      "Centipedes" = "Centipedes",

@@ -19,8 +19,6 @@ library(sf)
 library(tidyverse)
 library(RColorBrewer)
 
-# SET PARAMETERS ------------------------------------
-
 # DATA FILES ------------------------------------------
 
 # Load SDM fixed effect summaries
@@ -47,9 +45,6 @@ IsleOfMan <- vect("../Data/Spatial_data/Boundaries_and_CRS/IsleOfMan/IMN.shp")
 
 # Load previous plots
 tilePlot <- readRDS("../Data/Species_Data/tilePlotBF.RDS")
-
-# Load opportunity space
-oppSpace <- readRDS("../Data/Spatial_Data/opportunitySpaceBF.RDS")
 
 # DESCRIPTIVE POOLED STATS --------------------------------
 
@@ -256,26 +251,3 @@ ggsave(filename = paste0("../Writing/Plots/", "RichnessPlot.png"),
        richnessMap,
        dpi = 600,
        units = "px", width = 4000, height = 6000)
-
-# DATA SUMMARIES ----------------------------------------------------------
-
-# Proportion of converged models which are broadleaf- coniferous- ans open-associated species
-NROW(subset(meta_df,broadleafAssociation == "Y")) / NROW(meta_df) * 100
-NROW(subset(meta_df, coniferousAssociation == "Y")) / NROW(meta_df) * 100
-NROW(subset(meta_df, openAssociation == "Y")) / NROW(meta_df) * 100
-
-# Proportion of broadleaf-associated species which have positive/negative/no connectivity effect
-NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Pos")) / 
-       NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "Neg")) / 
-  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-NROW(subset(meta_df,broadleafAssociation == "Y" & connectivitySig == "NS")) / 
-  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-
-# Proportion of species with positive/negative/no cover:connectivity interaction effect
-NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT > 0 & X0.975quant_BFconnINT > 0)) / 
-  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT < 0 & X0.975quant_BFconnINT < 0)) / 
-  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100
-NROW(subset(meta_df,broadleafAssociation == "Y" & X0.025quant_BFconnINT <= 0 & X0.975quant_BFconnINT >= 0)) / 
-  NROW(subset(meta_df,broadleafAssociation == "Y")) * 100

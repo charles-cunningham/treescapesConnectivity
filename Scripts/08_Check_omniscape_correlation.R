@@ -86,13 +86,19 @@ y2015_df <- all_df[,grep("2015", c( names(UKLCM1990), names(UKLCM2015), names(om
 
 # Edit column names for plot
 names(y1990_df) <- names(y1990_df) %>%
-  gsub("radius", "radius=", .) %>%
+  gsub("radius20", "radius=500m", .) %>%
+  gsub("radius40", "radius=1km", .) %>%
+  gsub("radius80", "radius=2km", .) %>%
+  gsub("radius160", "radius=4km", .) %>%
   gsub("resistance", "resistance=", .) %>%
   gsub("_", ", ", .) %>%
   gsub(", year1990", "", .) %>%
   gsub("Cover1990", "Cover", .)
 names(y2015_df) <- names(y2015_df) %>%
-  gsub("radius", "radius=", .) %>%
+  gsub("radius20", "radius=500m", .) %>%
+  gsub("radius40", "radius=1km", .) %>%
+  gsub("radius80", "radius=2km", .) %>%
+  gsub("radius160", "radius=4km", .) %>%
   gsub("resistance", "resistance=", .) %>%
   gsub("_", ", ", .) %>%
   gsub(", year2015", "", .) %>%
@@ -104,7 +110,7 @@ names(y2015_df) <- names(y2015_df) %>%
 cor1990 <- cor(y1990_df)
 png(filename = '../Writing/Plots/corr_omni_1990.png',
     width = 30, height = 30, units = "cm", res = 300)
-corrplot(cor1990, type = "upper", order = "original",
+corrplot(cor1990, type = "upper", order = "original", diag = FALSE,
          method = "square", addCoef.col="white", tl.col = "black",
           tl.srt = 45)
 dev.off()
@@ -113,7 +119,7 @@ dev.off()
 cor2015 <- cor(y2015_df)
 png(filename = '../Writing/Plots/corr_omni_2015.png',
     width = 30, height = 30, units = "cm", res = 300)
-corrplot(cor2015, type = "upper", order = "original",
+corrplot(cor2015, type = "upper", order = "original", diag = FALSE,
          method = "square", addCoef.col="white",  tl.col = "black",
           tl.srt = 45)
 dev.off()

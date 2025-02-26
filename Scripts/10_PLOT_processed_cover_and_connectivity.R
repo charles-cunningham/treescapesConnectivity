@@ -266,7 +266,7 @@ staticBF_map <- ggplot(data = filter(plot_df, type == "Broadleaf"),
   geom_tile() +
   
   # Fill options
-  scale_fill_gradient2( "Proportion\nbroadleaf cover",
+  scale_fill_gradient2( "Broadleaf cover",
                         midpoint = 75,
                         low = "grey90",
                         mid = "#238b45",
@@ -311,7 +311,7 @@ staticCF_map <- ggplot(data = filter(plot_df, type == "Coniferous"),
   geom_tile() +
   
   # Fill options
-  scale_fill_gradient2( "Proportion\nconiferous cover",
+  scale_fill_gradient2( "Coniferous cover",
                         midpoint = 75,
                         low = "grey90",
                         mid = "#238b45",
@@ -400,7 +400,7 @@ changeBF_map <- ggplot(data = filter(plot_10k_df, type == "Broadleaf"),
   geom_tile() +
 
   # Fill options
-  scale_fill_gradient2( "Proportion broadleaf\ncover change 1990-2015",
+  scale_fill_gradient2( "Absolute proportion\nbroadleaf cover change",
                         midpoint = 0,
                         low = wes_palette("Zissou1")[5],
                         mid = "white",
@@ -443,7 +443,7 @@ changeCF_map <- ggplot(data = filter(plot_10k_df, type == "Coniferous"),
   geom_tile() +
   
   # Fill options
-  scale_fill_gradient2( "Proportion coniferous\ncover change 1990-2015",
+  scale_fill_gradient2( "Absolute proportion\n coniferous cover change",
                         midpoint = 0,
                         low = wes_palette("Zissou1")[5],
                         mid = "white",
@@ -485,7 +485,7 @@ changeConn_map <- ggplot(data = filter(plot_10k_df, type == "Connectivity"),
   geom_tile() +
   
   # Fill options
-  scale_fill_gradient2( "Woodland connectivity\nchange 1990-2015 (amps)",
+  scale_fill_gradient2( "Woodland connectivity\nchange (amps)",
                         midpoint = 0,
                         low = wes_palette("Zissou1")[5],
                         mid = "white",
