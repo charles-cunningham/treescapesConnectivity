@@ -67,13 +67,13 @@ dataBRC <- c( "Bryophytes", "Carabids", "Caddisflies", "Centipedes",
 range1 = c(1990,2000)
 range2 = c(2015,2025)
 
-# Set number of threads
-numThreads = 4
-
 # Set batch number/species (as.numeric(args[1])) and taxa group (arg[2]), specified array in job script
 args <- commandArgs(trailingOnly = TRUE)
 batchN <- as.numeric(args[1])
 taxaGroup <- args[2]
+
+# Set number of threads
+numThreads = 4
 
 # Estimated range of spatial effect in km (determines mesh)
 estimated_range <- 50 
@@ -119,7 +119,7 @@ for (i in list.files("Treescapes/ST_SDMs/Data/DataForInlabru/spatVector",
 # different tasks tring to read/write at same time 
 
 # Specify temporary file to download 'bng' CRS wkt to
-tempFile <- paste0("Treescapes/ST_SDMs/Data/",taxaGroup, batchN, "bng.prj")
+tempFile <- paste0(taxaGroup, batchN, "bng.prj")
 
 # Download file
 download.file(url = "https://epsg.io/27700.wkt2?download=1",
@@ -130,6 +130,10 @@ bng <- sf::st_crs(tempFile)$wkt
 
 # Remove temporary file
 unlink(tempFile)
+
+##########################################################################
+# If using anonymous example species, skip to PROCESS COVARIATES section #
+##########################################################################
 
 ### SPECIES DATA
 
@@ -438,6 +442,9 @@ visitDataSpatial <- project (visitDataSpatial,
 visitDataSpatial <- mask(visitDataSpatial, smoothUK)
 
 # PROCESS COVARIATES -----------------------------------
+
+# Load example species if using
+#visitDataSpatial <- readRDS("../Data/example_species.Rds")
 
 # CREATE WEEK COVARIATE
 
